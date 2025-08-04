@@ -163,6 +163,18 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
         return ERC2771Context._contextSuffixLength();
     }
 
+    // ERC20의 _update 함수를 오버라이드하여 락업 기능 추가
+    function _update(address from, address to, uint256 value) internal virtual override {
+        // mint 또는 burn이 아닌 일반적인 전송에서만 락업 조건 확인
+        if (from != address(0)) {
+            require(lockupUntil[from] <= block.timestamp, "Tokens are locked for this account.");
+            require(!paused(), "Tokens are Paused on this contract.");
+        }
+
+        // 부모 컨트랙트의 _update 함수 호출
+        super._update(from, to, value);
+    }
+
     // --- 1차 발행 ---
     function requestInvestment(
         string memory _investmentId,
@@ -237,10 +249,7 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
         uint256 result = abi.decode(_response, (uint256));
 
         if (result == 1) {
-            if (balanceOf(address(this)) >= amount * (10 ** decimals())) {
-                require(lockupUntil[address(this)] <= block.timestamp, "Tokens are locked for this Contract");
-                
-                require(lockupUntil[buyer] <= block.timestamp, "Tokens are locked for this buyer");
+            if (balanceOf(address(this)) >= amount * (10 ** decimals())) {             
                 _transfer(address(this), buyer, amount * (10 ** decimals()));
 
                 investmentProcessed[_investmentId] = true;
@@ -322,9 +331,7 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
             uint256 tradeAmount = amount * (10 ** decimals());
             require(allowance(seller, address(this)) >= tradeAmount, "Seller's allowance to contract is insufficient for transfer.");
             require(balanceOf(seller) >= tradeAmount, "Seller's balance is insufficient for transfer.");
-
-            require(lockupUntil[seller] <= block.timestamp, "Tokens are locked for this seller");
-            require(lockupUntil[buyer] <= block.timestamp, "Tokens are locked for this buyer");
+            
             _transfer(seller, buyer, tradeAmount);
 
             tradeProcessed[_tradeId] = true;
@@ -341,10 +348,7 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
     }
 
     function transferTokensFromContract(address _to, uint256 _amount) public onlyOwner {
-        require(
-            balanceOf(address(this)) >= _amount,
-            "Insufficient contract tokens."
-        );
+        require(balanceOf(address(this)) >= _amount, "Insufficient contract tokens.");
         _transfer(address(this), _to, _amount);
     }
 }
