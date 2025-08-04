@@ -1,13 +1,12 @@
 // test/FractionalInvestmentToken.test.js
+
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 require("dotenv").config();
 
-describe("FractionalInvestmentToken (Local Tests)", function () {
+describe("FractionalInvestmentToken (Local Tests with Admin Key)", function () {
     let token;
     let deployer;
-    let user1;
-    let user2;
     let trustedForwarder;
     let router;
     let subscriptionId;
@@ -15,10 +14,10 @@ describe("FractionalInvestmentToken (Local Tests)", function () {
 
     // 테스트 환경을 설정
     beforeEach(async function () {
-        [deployer, user1, user2] = await ethers.getSigners();
+        [deployer] = await ethers.getSigners();
         
         // Mocking for Chainlink & Gelato
-        trustedForwarder = process.env.GELATO_TRUSTED_FORWARDER; // 테스트를 위해 deployer 주소를 사용
+        trustedForwarder = process.env.GELATO_TRUSTED_FORWARDER;
         router = process.env.SEPOLIA_FUNCTIONS_ROUTER;
         subscriptionId = BigInt(process.env.CHAINLINK_FUNCTIONS_SUBSCRIPTIONS);
         donId = process.env.SEPOLIA_DON_ID;
@@ -67,22 +66,22 @@ describe("FractionalInvestmentToken (Local Tests)", function () {
     
     // --- 추가된 관리 기능 테스트 ---
     describe("Management Functions", function () {
-        it("소유자만 컨트랙트를 일시 중지/재개할 수 있어야 한다", async function () {
-            await expect(token.connect(user1).pause()).to.be.revertedWith("Ownable: caller is not the owner");
+        it("관리자만 컨트랙트를 일시 중지/재개할 수 있어야 한다", async function () {
+            // 관리자(deployer)가 pause 호출 -> 성공
             await token.pause();
             expect(await token.paused()).to.be.true;
 
-            await expect(token.connect(user1).unpause()).to.be.revertedWith("Ownable: caller is not the owner");
+            // 관리자(deployer)가 unpause 호출 -> 성공
             await token.unpause();
             expect(await token.paused()).to.be.false;
         });
 
-        it("소유자만 투자 기간을 설정할 수 있어야 한다", async function () {
+        it("관리자만 투자 기간을 설정할 수 있어야 한다", async function () {
             const now = (await ethers.provider.getBlock("latest")).timestamp;
             const startTime = now + 100;
             const endTime = now + 200;
 
-            await expect(token.connect(user1).setInvestmentPeriod(startTime, endTime)).to.be.revertedWith("Ownable: caller is not the owner");
+            // 관리자(deployer)가 투자 기간 설정 -> 성공
             await token.setInvestmentPeriod(startTime, endTime);
             
             expect(await token.investmentStartTime()).to.equal(startTime);
@@ -93,16 +92,43 @@ describe("FractionalInvestmentToken (Local Tests)", function () {
             const now = (await ethers.provider.getBlock("latest")).timestamp;
             const unlockTime = now + 1000;
 
-            await expect(token.connect(user1).setLockup(user1.address, unlockTime)).to.be.revertedWith("Ownable: caller is not the owner");
-            await token.setLockup(user1.address, unlockTime);
+            // 관리자(deployer)가 락업 기간 설정 -> 성공
+            await token.setLockup(deployer.address, unlockTime);
             
             // 락업 기간 중에는 전송이 불가능해야 함
-            // 먼저 토큰을 user1에게 전송
-            await token.transferTokensFromContract(user1.address, 100);
-            expect(await token.balanceOf(user1.address)).to.equal(100);
+            // deployer에게 토큰을 전송
+            await token.transferTokensFromContract(deployer.address, 100);
+            expect(await token.balanceOf(deployer.address)).to.equal(100);
 
             // 락업 기간이 아직 끝나지 않았으므로 전송 실패
-            await expect(token.connect(user1).transfer(user2.address, 10)).to.be.revertedWith("Tokens are locked for this account.");
+            await expect(token.connect(deployer).transfer(deployer.address, 10)).to.be.revertedWith("Tokens are locked for this account.");
+        });
+
+        it("(투자) 컨트랙트 일시 중지인 경우, 토큰 전송이 불가해야 한다", async function () {
+            // 컨트랙트 일시 중지
+            await token.pause();
+
+            // 일시 중지된 상태에서 전송 시도 -> Pausable 에러로 실패해야 함
+            await expect(token.transferTokensFromContract(deployer.address, 100)).to.be.revertedWith("Tokens are Paused on this contract.");
+            expect(await token.balanceOf(deployer.address)).to.equal(0);
+            
+            // 테스트 후 상태를 원래대로 되돌립니다.
+            await token.unpause();
+        });
+
+        it("(거래) 컨트랙트 일시 중지인 경우, 토큰 전송이 불가해야 한다", async function () {
+            // 일시 중지된 상태에서 전송 시도 -> Pausable 에러로 실패해야 함
+            await token.transferTokensFromContract(deployer.address, 100);
+            expect(await token.balanceOf(deployer.address)).to.equal(100);
+
+            // 컨트랙트 일시 중지
+            await token.pause();
+
+            await expect(token.connect(deployer).transfer(await token.getAddress(), 10)).to.be.revertedWith("Tokens are Paused on this contract.");
+            expect(await token.balanceOf(deployer.address)).to.equal(100);
+            
+            // 테스트 후 상태를 원래대로 되돌립니다.
+            await token.unpause();
         });
     });
 });
