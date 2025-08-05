@@ -1,14 +1,14 @@
-const requestId = args[0];
+const tradeId = args[0];
 
 const apiURL = "API_URL_PLACEHOLDER";
 
 const apiResponse = await Functions.makeHttpRequest({
-  url: `${apiURL}?id=${requestId}`
+    url: `${apiURL}?id=${tradeId}`
 });
 
 if (apiResponse.error) {
-  console.error(apiResponse.error);
-  throw Error("Request failed");
+    console.error(apiResponse.error);
+    throw Error("Request failed");
 }
 
 const { data } = apiResponse;
