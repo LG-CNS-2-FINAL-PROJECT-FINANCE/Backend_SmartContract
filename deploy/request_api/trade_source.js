@@ -1,13 +1,14 @@
 const tradeId = args[0];
 
-// 외부 API 호출
+const apiURL = "API_URL_PLACEHOLDER";
+
 const apiResponse = await Functions.makeHttpRequest({
-  url: `https://1d645917e1ef.ngrok-free.app/trade_payment/verify?id=${tradeId}`
+  url: `${apiURL}?id=${tradeId}`
 });
 
 if (apiResponse.error) {
-  console.error(apiResponse.error);
-  throw Error("Request failed");
+  console.error(apiResponse.error);
+  throw Error("Request failed");
 }
 
 const { data } = apiResponse;
