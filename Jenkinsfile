@@ -8,9 +8,6 @@ pipeline {
     }
 
     environment {
-        GIT_URL = "https://github.com/LG-CNS-2-FINAL-PROJECT-FINANCE/Backend_SmartContract.git"
-        GITHUB_CREDENTIAL = "github-token"
-
         SEPOLIA_RPC_URL = credentials('SEPOLIA_RPC_URL')
         PRIVATE_KEY_ADMIN = credentials('PRIVATE_KEY_ADMIN')
         
@@ -32,25 +29,16 @@ pipeline {
         string(name: 'TOKEN_SYMBOL', description: 'The symbol of the token.')
         string(name: 'TOTAL_GOAL_AMOUNT', description: 'The total investment goal.')
         string(name: 'MIN_AMOUNT', description: 'The minimum investment amount.')
-        string(name: 'TAG', defaultValue: 'main', description: 'The git branch or tag to build.')
     }
 
     stages {
-        stage('Checkout') {
-            steps {
-                echo "Checking out Git branch/tag: ${params.TAG}"
-                checkout([
-                    $class: 'GitSCM',
-                    branches: [[name: "${params.TAG}"]],
-                    userRemoteConfigs: [[credentialsId: "${env.GITHUB_CREDENTIAL}", url: "${env.GIT_URL}"]]
-                ])
-            }
-        }
-        
         stage('Test') {
             steps {
                 echo 'Running tests...'
-                sh 'npm run test'
+
+                withEnv(["PATH+=${env.WORKSPACE}/node_modules/.bin"]) {
+                    sh 'npm run test'
+                }
             }
         }
         
@@ -59,7 +47,6 @@ pipeline {
                 script {
                     echo 'Deploying contract to Sepolia network...'
 
-                    // withEnv 블록을 사용하여 환경 변수를 명시적으로 설정
                     withEnv([
                         "TOKEN_NAME=${params.TOKEN_NAME}",
                         "TOKEN_SYMBOL=${params.TOKEN_SYMBOL}",
@@ -76,22 +63,24 @@ pipeline {
                         "TRADE_API_URL=${env.TRADE_API_URL}",
                         "DEPLOY_RESULT_API_URL=${env.DEPLOY_RESULT_API_URL}"
                     ]) {
-                        def deployOutput = sh(returnStdout: true, script: "npm run deploy")
-                        
-                        def contractAddress = (deployOutput =~ /FractionalInvestmentToken deployed to (0x[a-fA-F0-9]{40})/).collect { it[1] }[0]
-                        
-                        echo "Deployed contract address: ${contractAddress}"
-                        
-                        sh """
-                            curl -X POST \\
-                            -H "Content-Type: application/json" \\
-                            -d '{
-                                    "address":"${contractAddress}",
-                                    "name":"${params.TOKEN_NAME}",
-                                    "symbol":"${params.TOKEN_SYMBOL}"
-                                }' \\
-                            "${env.DEPLOY_RESULT_API_URL}"
-                        """
+                        withEnv(["PATH+=${env.WORKSPACE}/node_modules/.bin"]) {
+                            def deployOutput = sh(returnStdout: true, script: "npm run deploy")
+                            
+                            def contractAddress = (deployOutput =~ /FractionalInvestmentToken deployed to (0x[a-fA-F0-9]{40})/).collect { it[1] }[0]
+                            
+                            echo "Deployed contract address: ${contractAddress}"
+                            
+                            sh """
+                                curl -X POST \\
+                                -H "Content-Type: application/json" \\
+                                -d '{
+                                        "address":"${contractAddress}",
+                                        "name":"${params.TOKEN_NAME}",
+                                        "symbol":"${params.TOKEN_SYMBOL}"
+                                    }' \\
+                                "${env.DEPLOY_RESULT_API_URL}"
+                            """
+                        }
                     }
                 }
             }
@@ -101,11 +90,9 @@ pipeline {
     post {
         success {
             echo 'Deployment Pipeline Succeeded!'
-            // Slack, Discord 등으로 성공 알림 전송
         }
         failure {
             echo 'Deployment Pipeline Failed!'
-            // Slack, Discord 등으로 실패 알림 전송
         }
     }
 }
