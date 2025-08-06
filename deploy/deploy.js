@@ -9,9 +9,11 @@ const subscriptionId = BigInt(process.env.CHAINLINK_FUNCTIONS_SUBSCRIPTIONS);
 const donId = process.env.SEPOLIA_DON_ID;
 const trustedForwarder = process.env.GELATO_TRUSTED_FORWARDER;
 
+// 환경 변수에서 API URL을 가져옵니다.
 const investmentApiUrl = process.env.INVESTMENT_API_URL;
 const tradeApiUrl = process.env.TRADE_API_URL;
 
+// 자바스크립트 파일 읽기
 const investmentSourceCodeTemplate = fs.readFileSync(path.join(__dirname, '../resource/investment_source.js'), 'utf8');
 const tradeSourceCodeTemplate = fs.readFileSync(path.join(__dirname, '../resource/trade_source.js'), 'utf8');
 
@@ -34,6 +36,7 @@ module.exports = async ({ deployments }) => {
     log("----------------------------------------------------");    
     log("Deploying FractionalInvestmentToken (Off-chain Integration Model) and waiting for confirmations...");
     
+    // 템플릿에 API URL을 주입하여 최종 소스코드를 생성합니다.
     const investmentSourceCode = investmentSourceCodeTemplate.replace('API_URL_PLACEHOLDER', investmentApiUrl);
     const tradeSourceCode = tradeSourceCodeTemplate.replace('API_URL_PLACEHOLDER', tradeApiUrl);
 
@@ -58,7 +61,6 @@ module.exports = async ({ deployments }) => {
     });
 
     log(`FractionalInvestmentToken deployed to ${token.address}`);
-    log(`Constructor Arguments: ${args}`);
     log("----------------------------------------------------");
 
     if (process.env.ETHERSCAN_API_KEY && network.config.chainId === 11155111) {
