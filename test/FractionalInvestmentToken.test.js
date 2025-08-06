@@ -76,18 +76,6 @@ describe("FractionalInvestmentToken (Local Tests with Admin Key)", function () {
             expect(await token.paused()).to.be.false;
         });
 
-        it("관리자만 투자 기간을 설정할 수 있어야 한다", async function () {
-            const now = (await ethers.provider.getBlock("latest")).timestamp;
-            const startTime = now + 100;
-            const endTime = now + 200;
-
-            // 관리자(deployer)가 투자 기간 설정 -> 성공
-            await token.setInvestmentPeriod(startTime, endTime);
-            
-            expect(await token.investmentStartTime()).to.equal(startTime);
-            expect(await token.investmentEndTime()).to.equal(endTime);
-        });
-
         it("토큰 락업 기간이 올바르게 설정되어야 한다", async function () {
             const now = (await ethers.provider.getBlock("latest")).timestamp;
             const unlockTime = now + 1000;

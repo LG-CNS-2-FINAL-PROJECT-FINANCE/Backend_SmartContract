@@ -42,10 +42,6 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
     mapping(string => bool) public tradeProcessed;
     mapping(bytes32 => string) public tradeKey; // (chainlinkId -> tradeId)
 
-    // --- 조각 투자 모집 기간 ---
-    uint256 public investmentStartTime;
-    uint256 public investmentEndTime;
-
     // --- 토큰 전송이 불가 기간 ---
     mapping(address => uint256) private lockupUntil;
 
@@ -95,7 +91,7 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
     constructor(
         string memory _name,
         string memory _symbol,
-        uint256 _totalGoalAmount,
+        uint256 _totalAmount,
         uint256 _minInvestmentAmount,
         address _trustedForwarder,
         address _router,
@@ -110,12 +106,12 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
         ERC2771Context(_trustedForwarder)
     {
         require(_minInvestmentAmount > 0, "Minimum investment amount must be greater than 0");
-        require(_totalGoalAmount >= _minInvestmentAmount, "Total goal must be at least minimum investment amount");
-        require(_totalGoalAmount % _minInvestmentAmount == 0, "Total goal must be perfectly divisible by minimum investment amount");
+        require(_totalAmount >= _minInvestmentAmount, "Total goal must be at least minimum investment amount");
+        require(_totalAmount % _minInvestmentAmount == 0, "Total goal must be perfectly divisible by minimum investment amount");
         require(_trustedForwarder != address(0), "Trusted Forwarder address cannot be zero");
 
         // token info
-        totalInvestmentAmount = _totalGoalAmount;
+        totalInvestmentAmount = _totalAmount;
         minInvestmentAmount = _minInvestmentAmount;
         totalTokenAmount = totalInvestmentAmount / minInvestmentAmount;
 
@@ -135,13 +131,6 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
     }
     function unpause() public onlyOwner {
         _unpause();
-    }
-
-    // 투자 기간 설정
-    function setInvestmentPeriod(uint256 _startTime, uint256 _endTime) public onlyOwner {
-        require(_startTime < _endTime, "Start time must be before end time");
-        investmentStartTime = _startTime;
-        investmentEndTime = _endTime;
     }
 
     // 토큰 락업 기간을 설정
@@ -181,7 +170,6 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
         address _buyer,
         uint256 _tokenAmount
     ) public onlyOwner whenNotPaused {
-        require(investmentStartTime > 0 && block.timestamp >= investmentStartTime && block.timestamp <= investmentEndTime, "Investment period is not active.");
         require(!investmentProcessed[_investmentId], "Initial request already processed or pending.");
         require(_buyer != address(0), "Buyer address cannot be zero.");
         require(_tokenAmount > 0, "Token amount must be greater than 0.");
