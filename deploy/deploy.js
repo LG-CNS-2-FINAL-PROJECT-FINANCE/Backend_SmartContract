@@ -33,7 +33,7 @@ module.exports = async ({ deployments }) => {
     const totalGoalAmountBigInt = BigInt(totalGoalAmount);
     const minAmountBigInt = BigInt(minAmount);
 
-    log("----------------------------------------------------");    
+    log("----------------------------------------------------");     
     log("Deploying FractionalInvestmentToken (Off-chain Integration Model) and waiting for confirmations...");
     
     // 템플릿에 API URL을 주입하여 최종 소스코드를 생성합니다.
@@ -61,6 +61,16 @@ module.exports = async ({ deployments }) => {
     });
 
     log(`FractionalInvestmentToken deployed to ${token.address}`);
+    
+    // FunctionsSubscriptions 컨트랙트 인스턴스를 가져옵니다.
+    const functionsSubscriptionsContract = await ethers.getContractAt("IFunctionsSubscriptions", router);
+
+    // deployer 계정이 직접 addConsumer 함수를 호출합니다.
+    log("Registering as Chainlink Functions consumer...");
+    const addConsumerTx = await functionsSubscriptionsContract.connect(deployer).addConsumer(subscriptionId, token.address);
+    await addConsumerTx.wait(network.config.blockConfirmations || 5);
+    log(`Successfully registered consumer: ${token.address} for subscriptionId: ${subscriptionId}`);
+
     log("----------------------------------------------------");
 
     if (process.env.ETHERSCAN_API_KEY && network.config.chainId === 11155111) {

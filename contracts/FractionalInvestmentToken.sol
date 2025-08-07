@@ -8,6 +8,7 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import {FunctionsClient} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/FunctionsClient.sol";
 import {FunctionsRequest} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/libraries/FunctionsRequest.sol";
 import {ConfirmedOwner} from "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
+import {IFunctionsSubscriptions} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/interfaces/IFunctionsSubscriptions.sol";
 
 /**
  * @title FractionalInvestmentToken
@@ -17,6 +18,8 @@ import {ConfirmedOwner} from "@chainlink/contracts/src/v0.8/shared/access/Confir
  */
 contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ERC2771Context, Pausable {
     using FunctionsRequest for FunctionsRequest.Request;
+    
+    IFunctionsSubscriptions public functionsSubscriptions;
 
     uint256 public immutable totalInvestmentAmount;
     uint256 public immutable minInvestmentAmount;
@@ -115,7 +118,7 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
         minInvestmentAmount = _minInvestmentAmount;
         totalTokenAmount = totalInvestmentAmount / minInvestmentAmount;
 
-        // chainlink functions info
+        functionsSubscriptions = IFunctionsSubscriptions(_router);
         s_subscriptionId = _subscriptionId;
         s_donId = _donId;
         s_investmentSourceCode = _investmentSourceCode;
@@ -131,6 +134,11 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
     }
     function unpause() public onlyOwner {
         _unpause();
+    }
+
+    // 새로 추가된 부분: 컨트랙트 소유자만 컨슈머 등록 가능
+    function registerAsConsumer() public onlyOwner {
+        functionsSubscriptions.addConsumer(s_subscriptionId, address(this));
     }
 
     // 토큰 락업 기간을 설정
@@ -152,15 +160,12 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
         return ERC2771Context._contextSuffixLength();
     }
 
-    // ERC20의 _update 함수를 오버라이드하여 락업 기능 추가
     function _update(address from, address to, uint256 value) internal virtual override {
-        // mint 또는 burn이 아닌 일반적인 전송에서만 락업 조건 확인
         if (from != address(0)) {
             require(lockupUntil[from] <= block.timestamp, "Tokens are locked for this account.");
             require(!paused(), "Tokens are Paused on this contract.");
         }
 
-        // 부모 컨트랙트의 _update 함수 호출
         super._update(from, to, value);
     }
 
@@ -189,7 +194,7 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
 
         // 외부 요청 API KEY
         // if (encryptedSecretsUrls.length > 0)
-        //     req.addSecretsReference(encryptedSecretsUrls);
+        //      req.addSecretsReference(encryptedSecretsUrls);
         // }
 
         bytes32 chainlinkReqId = _sendRequest(req.encodeCBOR(), s_subscriptionId, GAS_LIMIT, s_donId);
@@ -237,7 +242,7 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
         uint256 result = abi.decode(_response, (uint256));
 
         if (result == 1) {
-            if (balanceOf(address(this)) >= amount * (10 ** decimals())) {             
+            if (balanceOf(address(this)) >= amount * (10 ** decimals())) {         
                 _transfer(address(this), buyer, amount * (10 ** decimals()));
 
                 investmentProcessed[_investmentId] = true;
@@ -284,7 +289,7 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
 
         // 외부 요청 API KEY
         // if (encryptedSecretsUrls.length > 0)
-        //     req.addSecretsReference(encryptedSecretsUrls);
+        //      req.addSecretsReference(encryptedSecretsUrls);
         // }
 
         bytes32 chainlinkReqId = _sendRequest(req.encodeCBOR(), s_subscriptionId, GAS_LIMIT, s_donId);

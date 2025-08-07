@@ -25,11 +25,14 @@ pipeline {
     }
 
     parameters {
+        string(name: 'PROJECT_ID', description: 'Unique identifier for the product.')
         string(name: 'TOKEN_NAME', description: 'The name of the token.')
         string(name: 'TOKEN_SYMBOL', description: 'The symbol of the token.')
         string(name: 'TOTAL_GOAL_AMOUNT', description: 'The total investment goal.')
         string(name: 'MIN_AMOUNT', description: 'The minimum investment amount.')
     }
+
+    def contractAddress = ""
 
     stages {
         stage('Test') {
@@ -66,20 +69,9 @@ pipeline {
                         withEnv(["PATH+=${env.WORKSPACE}/node_modules/.bin"]) {
                             def deployOutput = sh(returnStdout: true, script: "npm run deploy")
                             
-                            def contractAddress = (deployOutput =~ /FractionalInvestmentToken deployed to (0x[a-fA-F0-9]{40})/).collect { it[1] }[0]
+                            contractAddress = (deployOutput =~ /FractionalInvestmentToken deployed to (0x[a-fA-F0-9]{40})/).collect { it[1] }[0]
                             
                             echo "Deployed contract address: ${contractAddress}"
-                            
-                            sh """
-                                curl -X POST \\
-                                -H "Content-Type: application/json" \\
-                                -d '{
-                                        "address":"${contractAddress}",
-                                        "name":"${params.TOKEN_NAME}",
-                                        "symbol":"${params.TOKEN_SYMBOL}"
-                                    }' \\
-                                "${env.DEPLOY_RESULT_API_URL}"
-                            """
                         }
                     }
                 }
@@ -90,9 +82,31 @@ pipeline {
     post {
         success {
             echo 'Deployment Pipeline Succeeded!'
+                            
+            sh """
+                curl -X POST \\
+                -H "Content-Type: application/json" \\
+                -d '{
+                        "productId":"${params.PRODUCT_ID}",
+                        "address":"${contractAddress}",
+                        "status":"success"
+                    }' \\
+                "${env.DEPLOY_RESULT_API_URL}"
+            """
         }
         failure {
             echo 'Deployment Pipeline Failed!'
+            
+            sh """
+                curl -X POST \\
+                -H "Content-Type: application/json" \\
+                -d '{
+                        "productId":"${params.PRODUCT_ID}",
+                        "address":"${contractAddress}",
+                        "status":"failure"
+                    }' \\
+                "${env.DEPLOY_RESULT_API_URL}"
+            """
         }
     }
 }
