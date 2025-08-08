@@ -21,6 +21,7 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
     
     IFunctionsSubscriptions public functionsSubscriptions;
 
+    bytes32 public immutable projectId;
     uint256 public immutable totalInvestmentAmount;
     uint256 public immutable minInvestmentAmount;
     uint256 public immutable totalTokenAmount;
@@ -36,7 +37,7 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
     mapping(string => address) public investmentor;
     mapping(string => uint256) public investmentTokenAmount;
     mapping(string => bool) public investmentProcessed;
-    mapping(bytes32 => string) public investmentKey; // (chainlinkId -> userRequestId)
+    mapping(bytes32 => string) public investmentKey; // (chainlinkId -> investmentId)
 
     // --- 2차 거래 구매 요청 관련 상태 변수 (key = tradeId) ---
     mapping(string => address) public tradeSeller;
@@ -49,40 +50,46 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
     mapping(address => uint256) private lockupUntil;
 
     event InvestmentRequested(
-        string indexed userRequestId,
-        address indexed buyer,
-        uint256 tokenAmount,
-        bytes32 chainlinkRequestId
+        bytes32 indexed projectId,
+        string indexed investmentId,
+        bytes32 indexed chainlinkRequestId,
+        address buyer,
+        uint256 tokenAmount
     );
     event InvestmentSuccessful(
-        string indexed userRequestId,
-        address indexed buyer,
+        bytes32 indexed projectId,
+        string indexed investmentId,
+        bytes32 indexed chainlinkRequestId,
+        address buyer,
         uint256 tokenAmount,
-        bytes32 chainlinkRequestId,
         string chainlinkResult
     );
     event InvestmentFailed(
-        string indexed userRequestId,
+        bytes32 indexed projectId,
+        string indexed investmentId,
         bytes32 indexed chainlinkRequestId,
         string reason
     );
 
     event TradeRequested(
+        bytes32 indexed projectId,
         string indexed tradeId,
-        address indexed seller,
-        address indexed buyer,
-        uint256 tokenAmount,
-        bytes32 chainlinkRequestId
+        bytes32 indexed chainlinkRequestId,
+        address seller,
+        address buyer,
+        uint256 tokenAmount
     );
     event TradeSuccessful(
+        bytes32 indexed projectId,
         string indexed tradeId,
-        address indexed seller,
-        address indexed buyer,
+        bytes32 indexed chainlinkRequestId,
+        address seller,
+        address buyer,
         uint256 tokenAmount,
-        bytes32 chainlinkRequestId,
         string chainlinkResult
     );
     event TradeFailed(
+        bytes32 indexed projectId,
         string indexed tradeId,
         bytes32 indexed chainlinkRequestId,
         string reason
@@ -92,6 +99,7 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
      * @dev FractionalInvestmentToken 컨트랙트의 생성자입니다.
      */
     constructor(
+        bytes32 _projectId,
         string memory _name,
         string memory _symbol,
         uint256 _totalAmount,
@@ -108,12 +116,14 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
         FunctionsClient(_router)
         ERC2771Context(_trustedForwarder)
     {
+        require(_projectId.length > 0, "Project ID can not empty");
         require(_minInvestmentAmount > 0, "Minimum investment amount must be greater than 0");
         require(_totalAmount >= _minInvestmentAmount, "Total goal must be at least minimum investment amount");
         require(_totalAmount % _minInvestmentAmount == 0, "Total goal must be perfectly divisible by minimum investment amount");
         require(_trustedForwarder != address(0), "Trusted Forwarder address cannot be zero");
 
         // token info
+        projectId = _projectId;
         totalInvestmentAmount = _totalAmount;
         minInvestmentAmount = _minInvestmentAmount;
         totalTokenAmount = totalInvestmentAmount / minInvestmentAmount;
@@ -200,7 +210,7 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
         bytes32 chainlinkReqId = _sendRequest(req.encodeCBOR(), s_subscriptionId, GAS_LIMIT, s_donId);
         investmentKey[chainlinkReqId] = _investmentId;
 
-        emit InvestmentRequested(_investmentId, _buyer, _tokenAmount, chainlinkReqId);
+        emit InvestmentRequested(projectId, _investmentId, chainlinkReqId, _buyer, _tokenAmount);
     }
 
     function fulfillRequest(
@@ -227,12 +237,12 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
         bytes memory _err
     ) private {
         if (investmentProcessed[_investmentId]) {
-            emit InvestmentFailed(_investmentId, _chainlinkRequestId, "Request already processed.");
+            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, "Request already processed.");
             return;
         }
 
         if (_err.length > 0) {
-            emit InvestmentFailed(_investmentId, _chainlinkRequestId, "Chainlink Functions request failed.");
+            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, "Chainlink Functions request failed.");
             return;
         }
 
@@ -247,12 +257,12 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
 
                 investmentProcessed[_investmentId] = true;
 
-                emit InvestmentSuccessful(_investmentId, buyer, amount, _chainlinkRequestId, "Initial payment verified");
+                emit InvestmentSuccessful(projectId, _investmentId, _chainlinkRequestId, buyer, amount, "Initial payment verified");
             } else {
-                emit InvestmentFailed(_investmentId, _chainlinkRequestId, "Insufficient contract token supply for initial transfer.");
+                emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, "Insufficient contract token supply for initial transfer.");
             }
         } else {
-            emit InvestmentFailed(_investmentId, _chainlinkRequestId, "Initial payment verification failed.");
+            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, "Initial payment verification failed.");
         }
     }
 
@@ -270,7 +280,6 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
         require(bytes(s_tradeSourceCode).length > 0, "Source code not set");
 
         uint256 tradeAmount = _tokenAmount * (10 ** decimals());
-
         require(balanceOf(_seller) >= tradeAmount, "Seller's token balance is insufficient for trade request.");
         require(allowance(_seller, address(this)) >= tradeAmount, "Seller's allowance to contract is insufficient for transfer.");
 
@@ -295,7 +304,7 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
         bytes32 chainlinkReqId = _sendRequest(req.encodeCBOR(), s_subscriptionId, GAS_LIMIT, s_donId);
         tradeKey[chainlinkReqId] = _tradeId;
 
-        emit TradeRequested(_tradeId, _seller, _buyer, _tokenAmount, chainlinkReqId);
+        emit TradeRequested(projectId, _tradeId, chainlinkReqId, _seller, _buyer, _tokenAmount);
     }
 
     function _handleTradeFulfillment(
@@ -305,12 +314,12 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
         bytes memory _err
     ) private {
         if (tradeProcessed[_tradeId]) {
-            emit TradeFailed(_tradeId, _chainlinkRequestId, "Request already processed.");
+            emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, "Request already processed.");
             return;
         }
 
         if (_err.length > 0) {
-            emit TradeFailed(_tradeId, _chainlinkRequestId, "Chainlink Functions request failed.");
+            emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, "Chainlink Functions request failed.");
             return;
         }
 
@@ -329,9 +338,9 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
 
             tradeProcessed[_tradeId] = true;
 
-            emit TradeSuccessful(_tradeId, seller, buyer, amount, _chainlinkRequestId, "Off-chain purchase verified");
+            emit TradeSuccessful(projectId, _tradeId, _chainlinkRequestId, seller, buyer, amount, "Off-chain purchase verified");
         } else {
-            emit TradeFailed(_tradeId, _chainlinkRequestId, "Off-chain purchase verification failed.");
+            emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, "Off-chain purchase verification failed.");
         }
     }
 

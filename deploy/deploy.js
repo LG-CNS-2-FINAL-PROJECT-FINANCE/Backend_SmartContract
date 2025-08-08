@@ -21,13 +21,14 @@ module.exports = async ({ deployments }) => {
     const { deploy, log } = deployments;
     const [ deployer ] = await ethers.getSigners();
 
+    const projectId = ethers.encodeBytes32String(process.env.PROJECT_ID);
     const name = process.env.TOKEN_NAME;
     const symbol = process.env.TOKEN_SYMBOL;
     const totalGoalAmount = process.env.TOTAL_GOAL_AMOUNT;
     const minAmount = process.env.MIN_AMOUNT;
 
-    if (!name || !symbol || !totalGoalAmount || !minAmount) {
-        throw new Error(`Missing required environment variables: TOKEN_NAME=${name}, TOKEN_SYMBOL=${symbol}, TOTAL_GOAL_AMOUNT=${totalGoalAmount}, MIN_AMOUNT=${minAmount}.`);
+    if (!projectId || !name || !symbol || !totalGoalAmount || !minAmount) {
+        throw new Error(`Missing required environment variables: PROJECT_ID=${projectId}, TOKEN_NAME=${name}, TOKEN_SYMBOL=${symbol}, TOTAL_GOAL_AMOUNT=${totalGoalAmount}, MIN_AMOUNT=${minAmount}.`);
     }
     
     const totalGoalAmountBigInt = BigInt(totalGoalAmount);
@@ -41,6 +42,7 @@ module.exports = async ({ deployments }) => {
     const tradeSourceCode = tradeSourceCodeTemplate.replace('API_URL_PLACEHOLDER', tradeApiUrl);
 
     const args = [
+        projectId,
         name,
         symbol,
         totalGoalAmountBigInt,

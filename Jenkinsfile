@@ -1,3 +1,5 @@
+def CONTRACT_ADDRESS
+
 pipeline {
     agent {
         docker {
@@ -32,8 +34,6 @@ pipeline {
         string(name: 'MIN_AMOUNT', description: 'The minimum investment amount.')
     }
 
-    def contractAddress = ""
-
     stages {
         stage('Test') {
             steps {
@@ -51,6 +51,7 @@ pipeline {
                     echo 'Deploying contract to Sepolia network...'
 
                     withEnv([
+                        "PROJECT_ID=${params.PROJECT_ID}",
                         "TOKEN_NAME=${params.TOKEN_NAME}",
                         "TOKEN_SYMBOL=${params.TOKEN_SYMBOL}",
                         "TOTAL_GOAL_AMOUNT=${params.TOTAL_GOAL_AMOUNT}",
@@ -69,9 +70,9 @@ pipeline {
                         withEnv(["PATH+=${env.WORKSPACE}/node_modules/.bin"]) {
                             def deployOutput = sh(returnStdout: true, script: "npm run deploy")
                             
-                            contractAddress = (deployOutput =~ /FractionalInvestmentToken deployed to (0x[a-fA-F0-9]{40})/).collect { it[1] }[0]
+                            CONTRACT_ADDRESS = (deployOutput =~ /FractionalInvestmentToken deployed to (0x[a-fA-F0-9]{40})/).collect { it[1] }[0]
                             
-                            echo "Deployed contract address: ${contractAddress}"
+                            echo "Deployed contract address: ${CONTRACT_ADDRESS}"
                         }
                     }
                 }
@@ -87,8 +88,8 @@ pipeline {
                 curl -X POST \\
                 -H "Content-Type: application/json" \\
                 -d '{
-                        "productId":"${params.PRODUCT_ID}",
-                        "address":"${contractAddress}",
+                        "projectId":"${params.PROJECT_ID}",
+                        "address":"${CONTRACT_ADDRESS}",
                         "status":"success"
                     }' \\
                 "${env.DEPLOY_RESULT_API_URL}"
@@ -101,8 +102,8 @@ pipeline {
                 curl -X POST \\
                 -H "Content-Type: application/json" \\
                 -d '{
-                        "productId":"${params.PRODUCT_ID}",
-                        "address":"${contractAddress}",
+                        "projectId":"${params.PROJECT_ID}",
+                        "address":"${CONTRACT_ADDRESS}",
                         "status":"failure"
                     }' \\
                 "${env.DEPLOY_RESULT_API_URL}"

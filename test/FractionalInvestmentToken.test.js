@@ -11,6 +11,11 @@ describe("FractionalInvestmentToken (Local Tests with Admin Key)", function () {
     let router;
     let subscriptionId;
     let donId;
+    let projectId;
+    let name;
+    let symbol;
+    let totalGoalAmount;
+    let minAmount;
 
     // 테스트 환경을 설정
     beforeEach(async function () {
@@ -26,14 +31,19 @@ describe("FractionalInvestmentToken (Local Tests with Admin Key)", function () {
         const investmentSourceCode = "return Functions.encodeUint256(1);";
         const tradeSourceCode = "return Functions.encodeUint256(1);";
 
+        projectId = ethers.encodeBytes32String(process.env.PROJECT_ID);
+        name = process.env.TOKEN_NAME;
+        symbol = process.env.TOKEN_SYMBOL;
+        totalGoalAmount = process.env.TOTAL_GOAL_AMOUNT;
+        minAmount = process.env.MIN_AMOUNT;
+
         const FractionalInvestmentToken = await ethers.getContractFactory("FractionalInvestmentToken");
-        
-        // 컨트랙트 배포
         token = await FractionalInvestmentToken.deploy(
-            "Test Fractional Investment Token",
-            "TFIT",
-            100_000_000,
-            10_000,
+            projectId,
+            name,
+            symbol,
+            totalGoalAmount,
+            minAmount,
             trustedForwarder,
             router,
             subscriptionId,
