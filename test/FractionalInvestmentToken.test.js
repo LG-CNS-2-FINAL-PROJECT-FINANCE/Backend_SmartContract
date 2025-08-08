@@ -58,8 +58,8 @@ describe("FractionalInvestmentToken (Local Tests with Admin Key)", function () {
     // --- ERC-20 및 기본 컨트랙트 기능 테스트 ---
     describe("Initialization & ERC-20", function () {
         it("컨트랙트가 올바르게 배포되어야 한다", async function () {
-            expect(await token.name()).to.equal("Test Fractional Investment Token");
-            expect(await token.symbol()).to.equal("TFIT");
+            expect(await token.name()).to.equal(name);
+            expect(await token.symbol()).to.equal(symbol);
             expect(await token.owner()).to.equal(deployer.address);
         });
 
