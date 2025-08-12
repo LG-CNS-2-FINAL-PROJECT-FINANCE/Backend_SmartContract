@@ -272,16 +272,44 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
         address _seller,
         address _buyer,
         uint256 _tokenAmount
-    ) public onlyOwner whenNotPaused {
-        require(!tradeProcessed[_tradeId], "Purchase request already processed or pending.");
-        require(_seller != address(0), "Seller address cannot be zero.");
-        require(_buyer != address(0), "Buyer address cannot be zero.");
-        require(_tokenAmount > 0, "Tokens to transfer must be greater than 0.");
-        require(bytes(s_tradeSourceCode).length > 0, "Source code not set");
+    ) public onlyOwner whenNotPaused {    // tradeId가 이미 처리되었거나 보류 중인지 확인
+        if (tradeProcessed[_tradeId]) {
+            emit TradeFailed(projectId, _tradeId, bytes32(0), "Purchase request already processed or pending.");
+            return;
+        }
+        // 판매자 주소가 0x0인지 확인
+        if (_seller == address(0)) {
+            emit TradeFailed(projectId, _tradeId, bytes32(0), "Seller address cannot be zero.");
+            return;
+        }
+        // 구매자 주소가 0x0인지 확인
+        if (_buyer == address(0)) {
+            emit TradeFailed(projectId, _tradeId, bytes32(0), "Buyer address cannot be zero.");
+            return;
+        }
+        // 토큰 수량이 0보다 큰지 확인
+        if (_tokenAmount == 0) {
+            emit TradeFailed(projectId, _tradeId, bytes32(0), "Tokens to transfer must be greater than 0.");
+            return;
+        }
+        // 소스 코드가 설정되었는지 확인
+        if (bytes(s_tradeSourceCode).length == 0) {
+            emit TradeFailed(projectId, _tradeId, bytes32(0), "Source code not set.");
+            return;
+        }
 
         uint256 tradeAmount = _tokenAmount * (10 ** decimals());
-        require(balanceOf(_seller) >= tradeAmount, "Seller's token balance is insufficient for trade request.");
-        require(allowance(_seller, address(this)) >= tradeAmount, "Seller's allowance to contract is insufficient for transfer.");
+
+        // 판매자의 토큰 잔액이 충분한지 확인
+        if (balanceOf(_seller) < tradeAmount) {
+            emit TradeFailed(projectId, _tradeId, bytes32(0), "Seller's token balance is insufficient for trade request.");
+            return;
+        }
+        // 판매자가 컨트랙트에 충분한 권한을 부여했는지 확인
+        if (allowance(_seller, address(this)) < tradeAmount) {
+            emit TradeFailed(projectId, _tradeId, bytes32(0), "Seller's allowance to contract is insufficient for transfer.");
+            return;
+        }
 
         tradeSeller[_tradeId] = _seller;
         tradeBuyer[_tradeId] = _buyer;
