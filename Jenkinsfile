@@ -21,7 +21,48 @@ pipeline {
                 checkout scm
             }
         }
+
+        stage('Set Version') {
+            agent any
+            steps {
+                script {
+                    echo '도커 이미지 이름과 태그를 동적으로 설정합니다...'
         
+                    // Podman을 이용해서 Node 컨테이너 안에서 package.json 읽기
+                    APP_NAME = sh (
+                        script: """
+                            podman run --rm \
+                                -v $PWD:/app \
+                                -w /app \
+                                node:18-alpine \
+                                sh -c "node -p \\"require('./package.json').name\\""
+                        """,
+                        returnStdout: true
+                    ).trim()
+        
+                    APP_VERSION = sh (
+                        script: """
+                            podman run --rm \
+                                -v $PWD:/app \
+                                -w /app \
+                                node:18-alpine \
+                                sh -c "node -p \\"require('./package.json').version\\""
+                        """,
+                        returnStdout: true
+                    ).trim()
+        
+                    DOCKER_IMAGE_NAME_WITH_VER = "${REGISTRY_HOST}/${APP_NAME}:${APP_VERSION}"
+                    DOCKER_IMAGE_NAME_LATEST   = "${REGISTRY_HOST}/${APP_NAME}:latest"
+        
+                    sh "echo IMAGE_NAME is ${APP_NAME}"
+                    sh "echo IMAGE_VERSION is ${APP_VERSION}"
+                    sh "echo DOCKER_IMAGE_NAME_WITH_VER is ${DOCKER_IMAGE_NAME_WITH_VER}"
+                    sh "echo DOCKER_IMAGE_NAME_LATEST is ${DOCKER_IMAGE_NAME_LATEST}"
+                }
+            }
+        }
+
+        /*
         stage('Set Version') {
             agent {
                 docker {
@@ -52,6 +93,7 @@ pipeline {
                 }
             }
         }
+        */
         
         stage('Image Build and Push') {
             steps {
