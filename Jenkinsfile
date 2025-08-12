@@ -2,7 +2,6 @@
 def APP_NAME
 def APP_VERSION
 def DOCKER_IMAGE_NAME_WITH_VER
-def DOCKER_IMAGE_NAME_LATEST
 
 pipeline {
     agent any
@@ -46,12 +45,10 @@ pipeline {
                     ).trim()
 
                     DOCKER_IMAGE_NAME_WITH_VER = "${REGISTRY_HOST}/${APP_NAME}:${APP_VERSION}"
-                    DOCKER_IMAGE_NAME_LATEST = "${REGISTRY_HOST}/${APP_NAME}:latest"
                     
                     sh "echo IMAGE_NAME is ${APP_NAME}"
                     sh "echo IMAGE_VERSION is ${APP_VERSION}"
                     sh "echo DOCKER_IMAGE_NAME_WITH_VER is ${DOCKER_IMAGE_NAME_WITH_VER}"
-                    sh "echo DOCKER_IMAGE_NAME_LATEST is ${DOCKER_IMAGE_NAME_LATEST}"
                 }
             }
         }
@@ -61,13 +58,11 @@ pipeline {
                 script {
                     echo "Building and pushing image..."
 
-                    sh "podman build -t ${env.DOCKER_IMAGE_NAME_WITH_VER} -t ${env.DOCKER_IMAGE_NAME_LATEST} ."
+                    sh "podman build -t ${env.DOCKER_IMAGE_NAME_WITH_VER} ."
                     sh "podman push ${env.DOCKER_IMAGE_NAME_WITH_VER}"
-                    sh "podman push ${env.DOCKER_IMAGE_NAME_LATEST}"
                     
                     // 빌드 후 로컬 이미지 제거
                     sh "podman rmi -f ${env.DOCKER_IMAGE_NAME_WITH_VER} || true"
-                    sh "podman rmi -f ${env.DOCKER_IMAGE_NAME_LATEST} || true"
                 }
             }
         }
