@@ -12,6 +12,10 @@ pipeline {
         USER_ID = 'kaebalsaebal'
         SERVICE_NAME = 'smart_contract'
     }
+
+    tools {
+        nodejs 'NodeJS 20.19.2'
+    }
     
     stages {
 
@@ -28,26 +32,13 @@ pipeline {
                 script {
                     echo '도커 이미지 이름과 태그를 동적으로 설정합니다...'
         
-                    // Podman을 이용해서 Node 컨테이너 안에서 package.json 읽기
-                    APP_NAME = sh (
-                        script: """
-                            podman run --rm \
-                                -v $PWD:/app \
-                                -w /app \
-                                node:18-alpine \
-                                sh -c "node -p \\"require('./package.json').name\\""
-                        """,
+                    APP_NAME = sh(
+                        script: "node -p \"require('./package.json').name\"",
                         returnStdout: true
                     ).trim()
-        
-                    APP_VERSION = sh (
-                        script: """
-                            podman run --rm \
-                                -v $PWD:/app \
-                                -w /app \
-                                node:18-alpine \
-                                sh -c "node -p \\"require('./package.json').version\\""
-                        """,
+
+                    APP_VERSION = sh(
+                        script: "node -p \"require('./package.json').version\"",
                         returnStdout: true
                     ).trim()
         
