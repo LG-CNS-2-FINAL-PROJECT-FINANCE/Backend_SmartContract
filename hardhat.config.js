@@ -8,11 +8,8 @@ module.exports = {
   networks: {
     sepolia: {
       url: process.env.SEPOLIA_RPC_URL || "",
-      accounts: [
-        process.env.PRIVATE_KEY,
-        process.env.PRIVATE_KEY_USER1,
-        process.env.PRIVATE_KEY_USER2,
-      ].filter(key => key !== undefined),
+      accounts: [process.env.PRIVATE_KEY_ADMIN].filter(key => key !== undefined),
+      chainId: 11155111,
     },
     localhost: {
       url: "http://127.0.0.1:8545",

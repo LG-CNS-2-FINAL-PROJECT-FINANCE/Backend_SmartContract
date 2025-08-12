@@ -1,0 +1,98 @@
+def CONTRACT_ADDRESS
+
+pipeline {
+    agent {
+        docker {
+            image 'namsangwon/backend-smart-contract:latest'
+
+            args '-v $HOME/.npm:/root/.npm'
+        }
+    }
+
+    parameters {
+        string(name: 'PROJECT_ID', description: 'Unique identifier for the product.')
+        string(name: 'TOKEN_NAME', description: 'The name of the token.')
+        string(name: 'TOKEN_SYMBOL', description: 'The symbol of the token.')
+        string(name: 'TOTAL_GOAL_AMOUNT', description: 'The total investment goal.')
+        string(name: 'MIN_AMOUNT', description: 'The minimum investment amount.')
+    }
+
+    stages {        
+        stage('Test & Deploy') {
+            steps {
+                script {
+                    withCredentials([file(credentialsId: 'ENV_FILE', variable: 'SECRET_FILE_PATH')]) {
+                        def loadedEnvsString = sh(returnStdout: true, script: "cat ${SECRET_FILE_PATH} | xargs").trim()
+                        def envList = loadedEnvsString.tokenize(' ').collect { it.trim() }
+
+                        withEnv(envList) {
+                            withEnv([
+                                "TOKEN_NAME=${params.TOKEN_NAME}",
+                                "TOKEN_SYMBOL=${params.TOKEN_SYMBOL}",
+                                "TOTAL_GOAL_AMOUNT=${params.TOTAL_GOAL_AMOUNT}",
+                                "MIN_AMOUNT=${params.MIN_AMOUNT}",
+                            ]) {
+                                echo 'Running tests...'
+
+                                sh 'npm run test'
+                                
+                                def deployOutput = sh(returnStdout: true, script: "npm run deploy")
+                                
+                                CONTRACT_ADDRESS = (deployOutput =~ /FractionalInvestmentToken deployed to (0x[a-fA-F0-9]{40})/).collect { it[1] }[0]
+                                
+                                echo "Deployed contract address: ${CONTRACT_ADDRESS}"
+                            }
+                      }
+                    }   
+                }
+            }
+        }
+    }
+    
+   post {
+        success {
+            script {
+                withCredentials([file(credentialsId: 'ENV_FILE', variable: 'SECRET_FILE_PATH')]) {
+                    def envLines = sh(returnStdout: true, script: "cat ${SECRET_FILE_PATH}").trim().split('\n').toList()
+                    
+                    withEnv(envLines) {
+                        echo 'Deployment Pipeline Succeeded!'
+                        
+                        sh """
+                            curl -X POST \\
+                            -H "Content-Type: application/json" \\
+                            -d '{
+                                    "projectId":"${params.PROJECT_ID}",
+                                    "address":"${CONTRACT_ADDRESS}",
+                                    "status":"success"
+                                }' \\
+                            "${env.DEPLOY_RESULT_API_URL}"
+                        """
+                    }
+                }
+            }
+        }
+        failure {
+            script {
+                withCredentials([file(credentialsId: 'ENV_FILE', variable: 'SECRET_FILE_PATH')]) {
+                    def envLines = sh(returnStdout: true, script: "cat ${SECRET_FILE_PATH}").trim().split('\n').toList()
+                    
+                    withEnv(envLines) {
+                        echo 'Deployment Pipeline Failed!'
+                        
+                        sh """
+                            curl -X POST \\
+                            -H "Content-Type: application/json" \\
+                            -d '{
+                                    "projectId":"${params.PROJECT_ID}",
+                                    "address":"${CONTRACT_ADDRESS}",
+                                    "status":"failure"
+                                }' \\
+                            "${env.DEPLOY_RESULT_API_URL}"
+                        """
+                    }
+                }
+            }
+        }
+    }
+}
