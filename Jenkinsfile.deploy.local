@@ -3,7 +3,7 @@ def CONTRACT_ADDRESS
 pipeline {
     agent {
         docker {
-            image 'namsangwon/backend-smart-contract:latest'
+            image 'namsangwon/backend-smart-contract:0.0.1'
 
             args '-v $HOME/.npm:/root/.npm'
         }
