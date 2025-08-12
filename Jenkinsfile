@@ -25,7 +25,7 @@ pipeline {
         
         stage('Set Version') {
             agent {
-                docker {
+                podman {
                     image 'node:18-alpine'
                     args '-v $PWD:/app' // 현재 프로젝트 디렉터리를 컨테이너의 /app으로 마운트합니다.
                 }
