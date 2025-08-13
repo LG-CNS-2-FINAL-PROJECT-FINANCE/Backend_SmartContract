@@ -4,12 +4,14 @@ require("hardhat-tracer");
 require("dotenv").config();
 
 module.exports = {
-  solidity: "0.8.20",
-  settings: {
-    optimizer: {
-      enabled: true,
-      runs: 200,
-    },
+  solidity: {
+    version: "0.8.20",
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200 // runs 값을 낮추면 크기는 줄어들지만 실행 가스비가 늘어날 수 있음
+      }
+    }
   },
   networks: {
     sepolia: {
