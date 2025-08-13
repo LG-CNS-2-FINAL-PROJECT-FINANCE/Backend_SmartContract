@@ -260,12 +260,12 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         bytes32 r,
         bytes32 s
     ) public onlyOwner whenNotPaused {
-        require(tradeProcessed[_tradeId], "Purchase request already processed or pending.");
-        require(_seller == address(0), "Seller address cannot be zero.");
-        require(_buyer == address(0), "Buyer address cannot be zero.");
-        require(_tokenAmount == 0, "Tokens to transfer must be greater than 0.");
-        require(bytes(s_tradeSourceCode).length == 0,"Source code not set.");
-        require(balanceOf(_seller) < _tokenAmount * (10 ** decimals()), "Seller's token balance is insufficient for trade request.");
+        require(!tradeProcessed[_tradeId], "Purchase request already processed or pending.");
+        require(_seller != address(0), "Seller address cannot be zero.");
+        require(_buyer != address(0), "Buyer address cannot be zero.");
+        require(_tokenAmount > 0, "Tokens to transfer must be greater than 0.");
+        require(bytes(s_tradeSourceCode).length > 0,"Source code not set.");
+        require(balanceOf(_seller) >= _tokenAmount * (10 ** decimals()), "Seller's token balance is insufficient for trade request.");
 
         permit(_seller, address(this), _tokenAmount * (10 ** decimals()), deadline, v, r, s);
 
@@ -320,7 +320,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
             require(allowance(seller, address(this)) >= tradeAmount, "Seller's allowance to contract is insufficient for transfer.");
             require(balanceOf(seller) >= tradeAmount, "Seller's balance is insufficient for transfer.");
             
-            _transfer(seller, buyer, tradeAmount);
+            transferFrom(seller, buyer, tradeAmount);
 
             tradeProcessed[_tradeId] = true;
 
