@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
@@ -15,7 +14,7 @@ import {IFunctionsSubscriptions} from "@chainlink/contracts/src/v0.8/functions/v
  * Chainlink Functions를 통해 오프체인 결제 확인 후, 판매자의 토큰을 구매자에게 직접 이전
  * Gelato Relayer (EIP-2771) 호환을 지원하여 사용자가 가스비 없이 상호작용 가능
  */
-contract FractionalInvestmentToken is ERC20, ERC20Permit, Ownable, FunctionsClient, Pausable {
+contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pausable {
     using FunctionsRequest for FunctionsRequest.Request;
     
     IFunctionsSubscriptions public functionsSubscriptions;
