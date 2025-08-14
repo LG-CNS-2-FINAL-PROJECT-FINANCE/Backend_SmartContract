@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/metatx/ERC2771Context.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import {FunctionsClient} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/FunctionsClient.sol";
 import {FunctionsRequest} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/libraries/FunctionsRequest.sol";
-import {ConfirmedOwner} from "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
 import {IFunctionsSubscriptions} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/interfaces/IFunctionsSubscriptions.sol";
 
 /**
@@ -16,7 +14,7 @@ import {IFunctionsSubscriptions} from "@chainlink/contracts/src/v0.8/functions/v
  * Chainlink Functions를 통해 오프체인 결제 확인 후, 판매자의 토큰을 구매자에게 직접 이전
  * Gelato Relayer (EIP-2771) 호환을 지원하여 사용자가 가스비 없이 상호작용 가능
  */
-contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ERC2771Context, Pausable {
+contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pausable {
     using FunctionsRequest for FunctionsRequest.Request;
     
     IFunctionsSubscriptions public functionsSubscriptions;
@@ -104,7 +102,6 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
         string memory _symbol,
         uint256 _totalAmount,
         uint256 _minInvestmentAmount,
-        address _trustedForwarder,
         address _router,
         uint64 _subscriptionId,
         bytes32 _donId,
@@ -112,15 +109,14 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
         string memory _tradeSourceCode
     )
         ERC20(_name, _symbol)
-        ConfirmedOwner(msg.sender)
+        ERC20Permit(_name)
+        Ownable(msg.sender)
         FunctionsClient(_router)
-        ERC2771Context(_trustedForwarder)
     {
         require(_projectId.length > 0, "Project ID can not empty");
         require(_minInvestmentAmount > 0, "Minimum investment amount must be greater than 0");
         require(_totalAmount >= _minInvestmentAmount, "Total goal must be at least minimum investment amount");
         require(_totalAmount % _minInvestmentAmount == 0, "Total goal must be perfectly divisible by minimum investment amount");
-        require(_trustedForwarder != address(0), "Trusted Forwarder address cannot be zero");
 
         // token info
         projectId = _projectId;
@@ -155,19 +151,6 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
     function setLockup(address _account, uint256 _unlockTime) public onlyOwner {
         require(_unlockTime > block.timestamp, "Unlock time must be in the future.");
         lockupUntil[_account] = _unlockTime;
-    }
-
-    // --- 다이아몬드 상속 문제 해결 (ERC2771Context의 함수를 사용) ---
-    function _msgSender() internal view virtual override(Context, ERC2771Context) returns (address) {
-        return ERC2771Context._msgSender();
-    }
-
-    function _msgData() internal view virtual override(Context, ERC2771Context) returns (bytes calldata) {
-        return ERC2771Context._msgData();
-    }
-
-    function _contextSuffixLength() internal view virtual override(Context, ERC2771Context) returns (uint256) {
-        return ERC2771Context._contextSuffixLength();
     }
 
     function _update(address from, address to, uint256 value) internal virtual override {
@@ -267,21 +250,24 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
     }
 
     // --- 2차 거래 ---
-    function requestTrade(
+    function requestTradeWithPermit(
         string memory _tradeId,
         address _seller,
         address _buyer,
-        uint256 _tokenAmount
+        uint256 _tokenAmount,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
     ) public onlyOwner whenNotPaused {
         require(!tradeProcessed[_tradeId], "Purchase request already processed or pending.");
         require(_seller != address(0), "Seller address cannot be zero.");
         require(_buyer != address(0), "Buyer address cannot be zero.");
         require(_tokenAmount > 0, "Tokens to transfer must be greater than 0.");
-        require(bytes(s_tradeSourceCode).length > 0, "Source code not set");
+        require(bytes(s_tradeSourceCode).length > 0,"Source code not set.");
+        require(balanceOf(_seller) >= _tokenAmount * (10 ** decimals()), "Seller's token balance is insufficient for trade request.");
 
-        uint256 tradeAmount = _tokenAmount * (10 ** decimals());
-        require(balanceOf(_seller) >= tradeAmount, "Seller's token balance is insufficient for trade request.");
-        require(allowance(_seller, address(this)) >= tradeAmount, "Seller's allowance to contract is insufficient for transfer.");
+        permit(_seller, address(this), _tokenAmount * (10 ** decimals()), deadline, v, r, s);
 
         tradeSeller[_tradeId] = _seller;
         tradeBuyer[_tradeId] = _buyer;
@@ -334,7 +320,7 @@ contract FractionalInvestmentToken is ERC20, ConfirmedOwner, FunctionsClient, ER
             require(allowance(seller, address(this)) >= tradeAmount, "Seller's allowance to contract is insufficient for transfer.");
             require(balanceOf(seller) >= tradeAmount, "Seller's balance is insufficient for transfer.");
             
-            _transfer(seller, buyer, tradeAmount);
+            transferFrom(seller, buyer, tradeAmount);
 
             tradeProcessed[_tradeId] = true;
 

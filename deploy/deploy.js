@@ -7,7 +7,6 @@ const path = require("path");
 const router = process.env.SEPOLIA_FUNCTIONS_ROUTER;
 const subscriptionId = BigInt(process.env.CHAINLINK_FUNCTIONS_SUBSCRIPTIONS);
 const donId = process.env.SEPOLIA_DON_ID;
-const trustedForwarder = process.env.GELATO_TRUSTED_FORWARDER;
 
 // 환경 변수에서 API URL을 가져옵니다.
 const investmentApiUrl = process.env.INVESTMENT_API_URL;
@@ -47,7 +46,6 @@ module.exports = async ({ deployments }) => {
         symbol,
         totalGoalAmountBigInt,
         minAmountBigInt,
-        trustedForwarder,
         router,
         subscriptionId,
         donId,
