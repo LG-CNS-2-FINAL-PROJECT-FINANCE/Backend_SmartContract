@@ -218,8 +218,9 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     }
 
     // --- 2차 거래 ---
-    function requestTradeWithPermit(
-        string memory _tradeId,
+    // 판매자가 토큰을 예치하고, 컨트랙트가 토큰 사용 권한을 부여받는 함수
+    function depositWithPermit(
+        string memory _tradeId, 
         address _seller,
         address _buyer,
         uint256 _tokenAmount,
@@ -228,14 +229,29 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         bytes32 r,
         bytes32 s
     ) public onlyOwner whenNotPaused {
-        require(!tradeProcessed[_tradeId], "Purchase request already processed or pending.");
-        require(_seller != address(0), "Seller address cannot be zero.");
-        require(_buyer != address(0), "Buyer address cannot be zero.");
+        // 1. 유효성 검사
+        require(!tradeRecord[_tradeId].processState, "Trade request already processed or pending.");
+        require(!tradeRecord[_tradeId].depositState, "Trade Deposit request already processed or pending.");
+        require(_seller != address(0) && _buyer != address(0), "Addresses cannot be zero.");
         require(_tokenAmount > 0, "Tokens to transfer must be greater than 0.");
-        require(bytes(s_tradeSourceCode).length > 0,"Source code not set.");
-        require(balanceOf(_seller) >= _tokenAmount * (10 ** decimals()), "Seller's token balance is insufficient for trade request.");
+        
+        // 2. 판매자 토큰 잔액 확인
+        uint256 tradeAmountWei = _tokenAmount * (10 ** decimals());
+        require(balanceOf(_seller) >= tradeAmountWei, "Seller's token balance is insufficient.");
 
-        permit(_seller, address(this), _tokenAmount * (10 ** decimals()), deadline, v, r, s);
+        // 3. 서명을 통해 컨트랙트에 토큰 사용 권한 부여
+        permit(_seller, address(this), tradeAmountWei, deadline, v, r, s);
+
+        // 4. 토큰 예치 (실제 토큰 이동)
+        transferFrom(_seller, address(this), tradeAmountWei);
+
+        // 5. 거래 정보 저장
+        tradeRecord[_tradeId].seller = _seller;
+        tradeRecord[_tradeId].buyer = _buyer;
+        tradeRecord[_tradeId].tokenAmount = _tokenAmount;
+        tradeRecord[_tradeId].processState = false;
+        tradeRecord[_tradeId].depositState = true;
+    }
 
         tradeSeller[_tradeId] = _seller;
         tradeBuyer[_tradeId] = _buyer;
