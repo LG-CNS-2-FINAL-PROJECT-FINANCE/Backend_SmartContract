@@ -243,7 +243,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         permit(_seller, address(this), tradeAmountWei, deadline, v, r, s);
 
         // 4. 토큰 예치 (실제 토큰 이동)
-        transferFrom(_seller, address(this), tradeAmountWei);
+        _transfer(_seller, address(this), tradeAmountWei);
 
         // 5. 거래 정보 저장
         tradeRecord[_tradeId].seller = _seller;
@@ -262,6 +262,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         require(tradeRecord[_tradeId].depositState, "Trade Deposit request already processed or pending.");
         require(_buyer != address(0), "Addresses cannot be zero.");
         require(tradeRecord[_tradeId].buyer == _buyer, "Buyer does not match transaction history");
+        require(bytes(s_tradeSourceCode).length > 0,"Source code not set.");
 
         uint256 tradeAmountWei = tradeRecord[_tradeId].tokenAmount * (10 ** decimals());
         require(balanceOf(address(this)) >= tradeAmountWei, "Contract holding amount is insufficient than Trade Token Amount.");
@@ -292,34 +293,43 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         bytes memory _response,
         bytes memory _err
     ) private {
-        if (tradeProcessed[_tradeId]) {
-            emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, "Request already processed.");
+        if (tradeRecord[_tradeId].processState) {
+            emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, REPEAT_FAILED, "Request already processed.");
             return;
         }
 
         if (_err.length > 0) {
-            emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, "Chainlink Functions request failed.");
+            emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, CHAINLINK_FAILED, "Chainlink Functions request failed.");
             return;
         }
 
-        address seller = tradeSeller[_tradeId];
-        address buyer = tradeBuyer[_tradeId];
-        uint256 amount = tradeTokenAmount[_tradeId];
+        address seller = tradeRecord[_tradeId].seller;
+        address buyer = tradeRecord[_tradeId].buyer;
+        uint256 amount = tradeRecord[_tradeId].tokenAmount;
+        uint256 tradeAmountWei = amount * (10 ** decimals());
 
         uint256 result = abi.decode(_response, (uint256));
 
         if (result == 1) {
-            uint256 tradeAmount = amount * (10 ** decimals());
-            require(allowance(seller, address(this)) >= tradeAmount, "Seller's allowance to contract is insufficient for transfer.");
-            require(balanceOf(seller) >= tradeAmount, "Seller's balance is insufficient for transfer.");
+            if (balanceOf(address(this)) < tradeAmountWei) {
+                emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, SMART_CONTRACT_FAILED, "Insufficient contract token supply for transfer.");
+                pause();
+                return;
+            }
             
-            transferFrom(seller, buyer, tradeAmount);
-
-            tradeProcessed[_tradeId] = true;
-
+            _transfer(address(this), buyer, tradeAmountWei);
+            tradeRecord[_tradeId].processState = true;
             emit TradeSuccessful(projectId, _tradeId, _chainlinkRequestId, seller, buyer, amount, "Off-chain purchase verified");
         } else {
-            emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, "Off-chain purchase verification failed.");
+            if (balanceOf(address(this)) < tradeAmountWei) {
+                emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, SMART_CONTRACT_FAILED, "Insufficient contract token supply for refund. Check previous transactions.");
+                pause();
+                return;
+            }
+            
+            _transfer(address(this), seller, tradeAmountWei);
+            tradeRecord[_tradeId].depositState = false;
+            emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, EXTERNAL_API_FAILED, "Off-chain purchase verification failed. Tokens returned to seller.");
         }
     }
 
