@@ -18,6 +18,12 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     uint256 public immutable minInvestmentAmount;
     uint256 public immutable totalTokenAmount;
 
+    // Error Status Code
+    uint32 private constant REPEAT_FAILED = 0;
+    uint32 private constant CHAINLINK_FAILED = 1;
+    uint32 private constant SMART_CONTRACT_FAILED = 2;
+    uint32 private constant EXTERNAL_API_FAILED = 3;
+
     // Chainlink Functions 설정
     uint64 private s_subscriptionId;
     bytes32 private s_donId;
@@ -48,55 +54,14 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     // --- 토큰 전송이 불가 기간 ---
     mapping(address => uint256) private lockupUntil;
 
-    event InvestmentRequested(
-        bytes32 indexed projectId,
-        string indexed investmentId,
-        bytes32 indexed chainlinkRequestId,
-        address buyer,
-        uint256 tokenAmount
-    );
-    event InvestmentSuccessful(
-        bytes32 indexed projectId,
-        string indexed investmentId,
-        bytes32 indexed chainlinkRequestId,
-        address buyer,
-        uint256 tokenAmount,
-        string chainlinkResult
-    );
-    event InvestmentFailed(
-        bytes32 indexed projectId,
-        string indexed investmentId,
-        bytes32 indexed chainlinkRequestId,
-        string reason
-    );
+    event InvestmentRequested(bytes32 indexed projectId, string indexed investmentId, bytes32 indexed chainlinkRequestId, address buyer, uint256 tokenAmount);
+    event InvestmentSuccessful(bytes32 indexed projectId, string indexed investmentId, bytes32 indexed chainlinkRequestId, address buyer, uint256 tokenAmount, string chainlinkResult);
+    event InvestmentFailed(bytes32 indexed projectId, string indexed investmentId, bytes32 indexed chainlinkRequestId, uint256 status, string reason);
 
-    event TradeRequested(
-        bytes32 indexed projectId,
-        string indexed tradeId,
-        bytes32 indexed chainlinkRequestId,
-        address seller,
-        address buyer,
-        uint256 tokenAmount
-    );
-    event TradeSuccessful(
-        bytes32 indexed projectId,
-        string indexed tradeId,
-        bytes32 indexed chainlinkRequestId,
-        address seller,
-        address buyer,
-        uint256 tokenAmount,
-        string chainlinkResult
-    );
-    event TradeFailed(
-        bytes32 indexed projectId,
-        string indexed tradeId,
-        bytes32 indexed chainlinkRequestId,
-        string reason
-    );
+    event TradeRequested(bytes32 indexed projectId, string indexed tradeId, bytes32 indexed chainlinkRequestId, address seller, address buyer, uint256 tokenAmount);
+    event TradeSuccessful(bytes32 indexed projectId, string indexed tradeId, bytes32 indexed chainlinkRequestId, address seller, address buyer, uint256 tokenAmount, string chainlinkResult);
+    event TradeFailed(bytes32 indexed projectId, string indexed tradeId, bytes32 indexed chainlinkRequestId, uint256 status, string reason);
 
-    /**
-     * @dev FractionalInvestmentToken 컨트랙트의 생성자입니다.
-     */
     constructor(
         bytes32 _projectId,
         string memory _name,
@@ -220,13 +185,13 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         bytes memory _response,
         bytes memory _err
     ) private {
-        if (investmentProcessed[_investmentId]) {
-            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, "Request already processed.");
+        if (investmentRecord[_investmentId].processState) {
+            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, REPEAT_FAILED, "Request already processed.");
             return;
         }
 
         if (_err.length > 0) {
-            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, "Chainlink Functions request failed.");
+            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, CHAINLINK_FAILED, "Chainlink Functions request failed.");
             return;
         }
 
@@ -243,10 +208,12 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
 
                 emit InvestmentSuccessful(projectId, _investmentId, _chainlinkRequestId, buyer, amount, "Initial payment verified");
             } else {
-                emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, "Insufficient contract token supply for initial transfer.");
+                // 심각한 에러 발생 : 내부 로직 오류
+                emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, SMART_CONTRACT_FAILED, "Insufficient contract token supply for initial transfer.");
+                pause();
             }
         } else {
-            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, "Initial payment verification failed.");
+            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, EXTERNAL_API_FAILED, "Initial payment verification failed.");
         }
     }
 
