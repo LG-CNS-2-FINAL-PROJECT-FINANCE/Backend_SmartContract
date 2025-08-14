@@ -252,12 +252,21 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         tradeRecord[_tradeId].processState = false;
         tradeRecord[_tradeId].depositState = true;
     }
+    
+    function requestTrade(
+        string memory _tradeId, 
+        address _buyer
+    ) public onlyOwner whenNotPaused {
+        // 1. 유효성 검사
+        require(!tradeRecord[_tradeId].processState, "Trade request already processed or pending.");
+        require(tradeRecord[_tradeId].depositState, "Trade Deposit request already processed or pending.");
+        require(_buyer != address(0), "Addresses cannot be zero.");
+        require(tradeRecord[_tradeId].buyer == _buyer, "Buyer does not match transaction history");
 
-        tradeSeller[_tradeId] = _seller;
-        tradeBuyer[_tradeId] = _buyer;
-        tradeTokenAmount[_tradeId] = _tokenAmount;
+        uint256 tradeAmountWei = tradeRecord[_tradeId].tokenAmount * (10 ** decimals());
+        require(balanceOf(address(this)) >= tradeAmountWei, "Contract holding amount is insufficient than Trade Token Amount.");
 
-        // Request External API
+        // External API
         FunctionsRequest.Request memory req;
         req.initializeRequestForInlineJavaScript(s_tradeSourceCode);
 
@@ -274,7 +283,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         bytes32 chainlinkReqId = _sendRequest(req.encodeCBOR(), s_subscriptionId, GAS_LIMIT, s_donId);
         tradeKey[chainlinkReqId] = _tradeId;
 
-        emit TradeRequested(projectId, _tradeId, chainlinkReqId, _seller, _buyer, _tokenAmount);
+        emit TradeRequested(projectId, _tradeId, chainlinkReqId, tradeRecord[_tradeId].seller, _buyer, tradeRecord[_tradeId].tokenAmount);
     }
 
     function _handleTradeFulfillment(
