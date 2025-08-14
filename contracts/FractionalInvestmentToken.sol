@@ -8,12 +8,6 @@ import {FunctionsClient} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/Fu
 import {FunctionsRequest} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/libraries/FunctionsRequest.sol";
 import {IFunctionsSubscriptions} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/interfaces/IFunctionsSubscriptions.sol";
 
-/**
- * @title FractionalInvestmentToken
- * @dev 오프체인 원화(₩) 투자에 연동하여 조각 투자 상품의 지분을 나타내는 ERC-20 토큰 컨트랙트
- * Chainlink Functions를 통해 오프체인 결제 확인 후, 판매자의 토큰을 구매자에게 직접 이전
- * Gelato Relayer (EIP-2771) 호환을 지원하여 사용자가 가스비 없이 상호작용 가능
- */
 contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pausable {
     using FunctionsRequest for FunctionsRequest.Request;
     
@@ -32,16 +26,23 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     uint32 private constant GAS_LIMIT = 300000;
 
     // --- 1차 발행 관련 상태 변수 (key = investmentId) ---
-    mapping(string => address) public investmentor;
-    mapping(string => uint256) public investmentTokenAmount;
-    mapping(string => bool) public investmentProcessed;
+    struct investment {
+        address investmentor;
+        uint256 tokenAmount;
+        bool processState;
+    }
+    mapping(string => investment) public investmentRecord;
     mapping(bytes32 => string) public investmentKey; // (chainlinkId -> investmentId)
 
     // --- 2차 거래 구매 요청 관련 상태 변수 (key = tradeId) ---
-    mapping(string => address) public tradeSeller;
-    mapping(string => address) public tradeBuyer;
-    mapping(string => uint256) public tradeTokenAmount;
-    mapping(string => bool) public tradeProcessed;
+    struct trade {
+        address seller;
+        address buyer;
+        uint256 tokenAmount;
+        bool processState;
+        bool depositState;
+    }
+    mapping(string => trade) public tradeRecord;
     mapping(bytes32 => string) public tradeKey; // (chainlinkId -> tradeId)
 
     // --- 토큰 전송이 불가 기간 ---
@@ -168,13 +169,13 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         address _buyer,
         uint256 _tokenAmount
     ) public onlyOwner whenNotPaused {
-        require(!investmentProcessed[_investmentId], "Initial request already processed or pending.");
+        require(!investmentRecord[_investmentId].processState, "Initial request already processed or pending.");
         require(_buyer != address(0), "Buyer address cannot be zero.");
         require(_tokenAmount > 0, "Token amount must be greater than 0.");
         require(balanceOf(address(this)) >= _tokenAmount * (10 ** decimals()), "Not enough tokens in contract for this initial request.");
 
-        investmentor[_investmentId] = _buyer;
-        investmentTokenAmount[_investmentId] = _tokenAmount;
+        investmentRecord[_investmentId].investmentor = _buyer;
+        investmentRecord[_investmentId].tokenAmount = _tokenAmount;
 
         // External API
         FunctionsRequest.Request memory req;
@@ -229,8 +230,8 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
             return;
         }
 
-        address buyer = investmentor[_investmentId];
-        uint256 amount = investmentTokenAmount[_investmentId];
+        address buyer = investmentRecord[_investmentId].investmentor;
+        uint256 amount = investmentRecord[_investmentId].tokenAmount;
 
         uint256 result = abi.decode(_response, (uint256));
 
@@ -238,7 +239,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
             if (balanceOf(address(this)) >= amount * (10 ** decimals())) {         
                 _transfer(address(this), buyer, amount * (10 ** decimals()));
 
-                investmentProcessed[_investmentId] = true;
+                investmentRecord[_investmentId].processState = true;
 
                 emit InvestmentSuccessful(projectId, _investmentId, _chainlinkRequestId, buyer, amount, "Initial payment verified");
             } else {
