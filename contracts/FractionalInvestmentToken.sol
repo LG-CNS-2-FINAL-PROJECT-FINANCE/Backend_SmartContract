@@ -255,16 +255,21 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     
     function requestTrade(
         string memory _tradeId, 
-        address _buyer
+        address _seller,
+        address _buyer,
+        uint256 _tokenAmount
     ) public onlyOwner whenNotPaused {
         // 1. 유효성 검사
         require(!tradeRecord[_tradeId].processState, "Trade request already processed or pending.");
         require(tradeRecord[_tradeId].depositState, "Trade Deposit request already processed or pending.");
-        require(_buyer != address(0), "Addresses cannot be zero.");
+        require(_buyer != address(0) && _seller != address(0), "Addresses cannot be zero.");
         require(tradeRecord[_tradeId].buyer == _buyer, "Buyer does not match transaction history");
+        require(tradeRecord[_tradeId].seller == _seller, "Seller does not match transaction history");
         require(bytes(s_tradeSourceCode).length > 0,"Source code not set.");
 
         uint256 tradeAmountWei = tradeRecord[_tradeId].tokenAmount * (10 ** decimals());
+        require(_tokenAmount > 0, "Token amount must be greater than 0.");
+        require(_tokenAmount == tradeRecord[_tradeId].tokenAmount, "Token amount does not match transaction history");
         require(balanceOf(address(this)) >= tradeAmountWei, "Contract holding amount is insufficient than Trade Token Amount.");
 
         // External API

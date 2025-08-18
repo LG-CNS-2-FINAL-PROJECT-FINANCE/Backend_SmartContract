@@ -181,7 +181,7 @@ describe("FractionalInvestmentToken (Local Tests without Chainlink)", function (
             await token.depositWithPermit(tradeId, otherAccount.address, deployer.address, tokenAmount, deadline, v, r, s);
             
             // `requestTrade` 호출 및 `requestId` 추출
-            const tx = await token.requestTrade(tradeId, deployer.address);
+            const tx = await token.requestTrade(tradeId, otherAccount.address, deployer.address, tokenAmount);
             const receipt = await tx.wait();
 
             // `TradeRequested` 이벤트에서 `reqId` 추출

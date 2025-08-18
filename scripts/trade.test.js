@@ -99,7 +99,12 @@ async function main() {
   // 2단계: requestTrade 호출
   // depositWithPermit()이 성공적으로 완료된 후, tradeId를 사용하여 requestTrade()를 호출합니다.
   console.log("\n--- Calling requestTrade ---");
-  const tx2 = await token.connect(deployer).requestTrade(tradeId, buyer.address);
+  const tx2 = await token.connect(deployer).requestTrade(
+    tradeId,
+    seller.address,
+    buyer.address,
+    tokenAmount
+  );
   await tx2.wait();
   console.log("✅ requestTrade executed");
 
