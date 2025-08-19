@@ -4,10 +4,10 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 require("dotenv").config();
 
-describe("FractionalInvestmentToken (Local Tests with Admin Key)", function () {
+describe("FractionalInvestmentToken (Local Tests without Chainlink)", function () {
     let token;
     let deployer;
-    let trustedForwarder;
+    let otherAccount;
     let router;
     let subscriptionId;
     let donId;
@@ -17,17 +17,21 @@ describe("FractionalInvestmentToken (Local Tests with Admin Key)", function () {
     let totalGoalAmount;
     let minAmount;
 
-    // 테스트 환경을 설정
+    // 테스트 환경 설정
     beforeEach(async function () {
-        [deployer] = await ethers.getSigners();
-        
-        // Mocking for Chainlink & Gelato
-        trustedForwarder = process.env.GELATO_TRUSTED_FORWARDER;
-        router = process.env.SEPOLIA_FUNCTIONS_ROUTER;
-        subscriptionId = BigInt(process.env.CHAINLINK_FUNCTIONS_SUBSCRIPTIONS);
-        donId = process.env.SEPOLIA_DON_ID;
+        [deployer, otherAccount] = await ethers.getSigners();
 
-        // JavaScript 소스 코드 모의
+        // Mock Router 배포
+        const MockRouter = await ethers.getContractFactory("MockFunctionsRouter");
+        mockRouter = await MockRouter.deploy();
+        await mockRouter.waitForDeployment();
+        
+        // Chainlink Functions를 건너뛰기 위해 모든 파라미터에 더미 값을 사용합니다.
+        router = await mockRouter.getAddress(); 
+        subscriptionId = 0; 
+        donId = ethers.ZeroHash;
+
+        // JavaScript 소스 코드 모킹
         const investmentSourceCode = "return Functions.encodeUint256(1);";
         const tradeSourceCode = "return Functions.encodeUint256(1);";
 
@@ -44,7 +48,6 @@ describe("FractionalInvestmentToken (Local Tests with Admin Key)", function () {
             symbol,
             totalGoalAmount,
             minAmount,
-            trustedForwarder,
             router,
             subscriptionId,
             donId,
@@ -67,6 +70,7 @@ describe("FractionalInvestmentToken (Local Tests with Admin Key)", function () {
             const totalTokens = await token.totalTokenAmount();
             const totalSupply = await token.totalSupply();
             const decimals = await token.decimals();
+            // ERC20 토큰의 총 발행량은 totalTokenAmount와 decimals를 기반으로 계산
             const expectedTotalSupply = totalTokens * (10n ** decimals);
 
             expect(totalSupply).to.equal(expectedTotalSupply);
@@ -127,6 +131,72 @@ describe("FractionalInvestmentToken (Local Tests with Admin Key)", function () {
             
             // 테스트 후 상태를 원래대로 되돌립니다.
             await token.unpause();
+        });
+    });
+
+        // --- Chainlink Functions 호출을 직접 모킹하여 테스트 ---
+    describe("Directly Mocking Chainlink Functions Calls", function () {
+        it("`requestInvestment`가 성공적으로 호출되어야 하고, `fulfillRequest`를 직접 호출하여 처리할 수 있어야 한다", async function () {
+            const investmentId = `INV-${Date.now()}`;
+            const tokenAmount = 100;
+            const decimals = await token.decimals();
+            const amountWei = BigInt(tokenAmount) * (10n ** decimals);
+
+            // `requestInvestment` 호출 및 `requestId` 추출
+            const tx = await token.requestInvestment(investmentId, otherAccount.address, tokenAmount);
+            const receipt = await tx.wait();
+            
+            // `InvestmentRequested` 이벤트에서 `reqId` 추출
+            const event = receipt.logs.find(log => log.fragment && log.fragment.name === "InvestmentRequested");
+            const reqId = event.args[2];
+            
+            // 모킹된 Chainlink 응답을 인코딩
+            const successResponse = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1]);
+            
+            // `mockRouter`를 통해 `fulfillRequest`를 호출하고, `token` 컨트랙트에서 이벤트가 발생하는지 확인
+            await expect(mockRouter.fulfillRequest(reqId, successResponse, "0x"))
+                .to.emit(token, "InvestmentSuccessful")
+                .withArgs(projectId, investmentId, reqId, otherAccount.address, tokenAmount, "Initial payment verified");
+
+            expect(await token.balanceOf(otherAccount.address)).to.equal(amountWei);
+        });
+
+        it("`requestTrade`가 성공적으로 호출되어야 하고, `fulfillRequest`를 직접 호출하여 처리할 수 있어야 한다", async function () {
+            const tradeId = `TRADE-${Date.now()}`;
+            const tokenAmount = 100;
+            const decimals = await token.decimals();
+            const amountWei = BigInt(tokenAmount) * (10n ** decimals);
+            const deadline = Math.floor(Date.now() / 1000) + 3600;
+
+            await token.transferTokensFromContract(otherAccount.address, amountWei);
+
+            const nonce = await token.nonces(otherAccount.address);
+            const value = amountWei;
+            const domain = { name: await token.name(), version: "1", chainId: (await ethers.provider.getNetwork()).chainId, verifyingContract: await token.getAddress() };
+            const types = { Permit: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }, { name: "value", type: "uint256" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" }] };
+            const permitMessage = { owner: otherAccount.address, spender: await token.getAddress(), value: value, nonce: nonce, deadline: deadline };
+            const signature = await otherAccount.signTypedData(domain, types, permitMessage);
+            const { v, r, s } = ethers.Signature.from(signature);
+
+            await token.depositWithPermit(tradeId, otherAccount.address, deployer.address, tokenAmount, deadline, v, r, s);
+            
+            // `requestTrade` 호출 및 `requestId` 추출
+            const tx = await token.requestTrade(tradeId, otherAccount.address, deployer.address, tokenAmount);
+            const receipt = await tx.wait();
+
+            // `TradeRequested` 이벤트에서 `reqId` 추출
+            const event = receipt.logs.find(log => log.fragment && log.fragment.name === "TradeRequested");
+            const reqId = event.args[2];
+
+            // 모킹된 Chainlink 응답을 인코딩
+            const successResponse = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1]);
+
+            // `mockRouter`를 통해 `fulfillRequest`를 호출하고, `token` 컨트랙트에서 이벤트가 발생하는지 확인
+            await expect(mockRouter.fulfillRequest(reqId, successResponse, "0x"))
+                .to.emit(token, "TradeSuccessful")
+                .withArgs(projectId, tradeId, reqId, otherAccount.address, deployer.address, tokenAmount, "Off-chain purchase verified");
+
+            expect(await token.balanceOf(deployer.address)).to.equal(amountWei);
         });
     });
 });
