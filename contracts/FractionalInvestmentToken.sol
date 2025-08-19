@@ -40,13 +40,27 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     mapping(string => investment) public investmentRecord;
     mapping(bytes32 => string) public investmentKey; // (chainlinkId -> investmentId)
 
-    // --- 2차 거래 구매 요청 관련 상태 변수 (key = tradeId) ---
-    struct trade {
+    // --- 2차 거래 관련 상태 변수 ---
+    // --- 2차 거래 판매 요청 (key = sellId) ---
+    struct sell {
         address seller;
-        address buyer;
-        uint256 tokenAmount;
-        bool processState;
+        uint256 sellAmount;
         bool depositState;
+    }
+    mapping(string => sell) public sellRecord;
+
+    // --- 2차 거래 구매 요청 (key = buyId) ---
+    struct buy {
+        address buyer;
+        uint256 buyAmount;
+    }
+    mapping(string => buy) public buyRecord;
+
+    // --- 2차 거래 체결 요청 (key = tradeId) ---
+    struct trade {
+        sell sellRecord;
+        buy buyRecord;
+        bool processState;
     }
     mapping(string => trade) public tradeRecord;
     mapping(bytes32 => string) public tradeKey; // (chainlinkId -> tradeId)
@@ -220,23 +234,21 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     // --- 2차 거래 ---
     // 판매자가 토큰을 예치하고, 컨트랙트가 토큰 사용 권한을 부여받는 함수
     function depositWithPermit(
-        string memory _tradeId, 
+        string memory _sellId, 
         address _seller,
-        address _buyer,
-        uint256 _tokenAmount,
+        uint256 _sellAmount,
         uint256 deadline,
         uint8 v,
         bytes32 r,
         bytes32 s
     ) public onlyOwner whenNotPaused {
         // 1. 유효성 검사
-        require(!tradeRecord[_tradeId].processState, "Trade request already processed or pending.");
-        require(!tradeRecord[_tradeId].depositState, "Trade Deposit request already processed or pending.");
-        require(_seller != address(0) && _buyer != address(0), "Addresses cannot be zero.");
-        require(_tokenAmount > 0, "Tokens to transfer must be greater than 0.");
+        require(!sellRecord[_sellId].depositState, "Trade Deposit request already processed or pending.");
+        require(_seller != address(0), "Addresses cannot be zero.");
+        require(_sellAmount > 0, "Tokens to transfer must be greater than 0.");
         
         // 2. 판매자 토큰 잔액 확인
-        uint256 tradeAmountWei = _tokenAmount * (10 ** decimals());
+        uint256 tradeAmountWei = _sellAmount * (10 ** decimals());
         require(balanceOf(_seller) >= tradeAmountWei, "Seller's token balance is insufficient.");
 
         // 3. 서명을 통해 컨트랙트에 토큰 사용 권한 부여
@@ -246,31 +258,43 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         _transfer(_seller, address(this), tradeAmountWei);
 
         // 5. 거래 정보 저장
-        tradeRecord[_tradeId].seller = _seller;
-        tradeRecord[_tradeId].buyer = _buyer;
-        tradeRecord[_tradeId].tokenAmount = _tokenAmount;
-        tradeRecord[_tradeId].processState = false;
-        tradeRecord[_tradeId].depositState = true;
+        sellRecord[_sellId].seller = _seller;
+        sellRecord[_sellId].sellAmount = _sellAmount;
+        sellRecord[_sellId].depositState = true;
     }
     
     function requestTrade(
-        string memory _tradeId, 
+        string memory _tradeId,
+        string memory _sellId,
         address _seller,
+        uint256 _sellAmount,
+        string memory _buyId,
         address _buyer,
-        uint256 _tokenAmount
+        uint256 _buyAmount
     ) public onlyOwner whenNotPaused {
         // 1. 유효성 검사
         require(!tradeRecord[_tradeId].processState, "Trade request already processed or pending.");
-        require(tradeRecord[_tradeId].depositState, "Trade Deposit request already processed or pending.");
+        require(sellRecord[_sellId].depositState, "Trade Deposit request is not processed or pending.");
+
         require(_buyer != address(0) && _seller != address(0), "Addresses cannot be zero.");
-        require(tradeRecord[_tradeId].buyer == _buyer, "Buyer does not match transaction history");
-        require(tradeRecord[_tradeId].seller == _seller, "Seller does not match transaction history");
+        require(_sellAmount > 0 && _buyAmount > 0, "Token amount must be greater than 0.");
+        require(_buyAmount == _sellAmount, "Buy and Sell amounts must match for trade.");
+
+        require(_seller == sellRecord[_sellId].seller, "Seller does not match transaction history");
+        require(_sellAmount == sellRecord[_sellId].sellAmount, "Sell amount does not match transaction history");
+
         require(bytes(s_tradeSourceCode).length > 0,"Source code not set.");
 
-        uint256 tradeAmountWei = tradeRecord[_tradeId].tokenAmount * (10 ** decimals());
-        require(_tokenAmount > 0, "Token amount must be greater than 0.");
-        require(_tokenAmount == tradeRecord[_tradeId].tokenAmount, "Token amount does not match transaction history");
-        require(balanceOf(address(this)) >= tradeAmountWei, "Contract holding amount is insufficient than Trade Token Amount.");
+        require(balanceOf(address(this)) >= _sellAmount * (10 ** decimals()), "Contract holding amount is insufficient than Trade Token Amount.");
+
+        // 2. 구매 정보 저장
+        buyRecord[_buyId].buyer = _buyer;
+        buyRecord[_buyId].buyAmount = _buyAmount;
+
+        // 3. 거래 체결 정보 저장
+        tradeRecord[_tradeId].sellRecord = sellRecord[_sellId];
+        tradeRecord[_tradeId].buyRecord = buyRecord[_buyId];
+        tradeRecord[_tradeId].processState = false;
 
         // External API
         FunctionsRequest.Request memory req;
@@ -289,7 +313,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         bytes32 chainlinkReqId = _sendRequest(req.encodeCBOR(), s_subscriptionId, GAS_LIMIT, s_donId);
         tradeKey[chainlinkReqId] = _tradeId;
 
-        emit TradeRequested(projectId, _tradeId, chainlinkReqId, tradeRecord[_tradeId].seller, _buyer, tradeRecord[_tradeId].tokenAmount);
+        emit TradeRequested(projectId, _tradeId, chainlinkReqId, _seller, _buyer, _sellAmount);
     }
 
     function _handleTradeFulfillment(
@@ -308,9 +332,9 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
             return;
         }
 
-        address seller = tradeRecord[_tradeId].seller;
-        address buyer = tradeRecord[_tradeId].buyer;
-        uint256 amount = tradeRecord[_tradeId].tokenAmount;
+        address seller = tradeRecord[_tradeId].sellRecord.seller;
+        address buyer = tradeRecord[_tradeId].buyRecord.buyer;
+        uint256 amount = tradeRecord[_tradeId].sellRecord.sellAmount;
         uint256 tradeAmountWei = amount * (10 ** decimals());
 
         uint256 result = abi.decode(_response, (uint256));
@@ -333,7 +357,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
             }
             
             _transfer(address(this), seller, tradeAmountWei);
-            tradeRecord[_tradeId].depositState = false;
+            tradeRecord[_tradeId].sellRecord.depositState = false;
             emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, EXTERNAL_API_FAILED, "Off-chain purchase verification failed. Tokens returned to seller.");
         }
     }
