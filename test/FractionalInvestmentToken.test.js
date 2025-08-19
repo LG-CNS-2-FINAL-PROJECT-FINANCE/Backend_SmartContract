@@ -162,26 +162,32 @@ describe("FractionalInvestmentToken (Local Tests without Chainlink)", function (
         });
 
         it("`requestTrade`가 성공적으로 호출되어야 하고, `fulfillRequest`를 직접 호출하여 처리할 수 있어야 한다", async function () {
+            const sellId = `SELL-${Date.now()}`;
+            const seller = otherAccount;
+            
+            const buyId = `BUY-${Date.now()}`;
+            const buyer = deployer;
+
             const tradeId = `TRADE-${Date.now()}`;
             const tokenAmount = 100;
             const decimals = await token.decimals();
             const amountWei = BigInt(tokenAmount) * (10n ** decimals);
             const deadline = Math.floor(Date.now() / 1000) + 3600;
 
-            await token.transferTokensFromContract(otherAccount.address, amountWei);
+            await token.transferTokensFromContract(seller.address, amountWei);
 
-            const nonce = await token.nonces(otherAccount.address);
+            const nonce = await token.nonces(seller.address);
             const value = amountWei;
             const domain = { name: await token.name(), version: "1", chainId: (await ethers.provider.getNetwork()).chainId, verifyingContract: await token.getAddress() };
             const types = { Permit: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }, { name: "value", type: "uint256" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" }] };
-            const permitMessage = { owner: otherAccount.address, spender: await token.getAddress(), value: value, nonce: nonce, deadline: deadline };
+            const permitMessage = { owner: seller.address, spender: await token.getAddress(), value: value, nonce: nonce, deadline: deadline };
             const signature = await otherAccount.signTypedData(domain, types, permitMessage);
             const { v, r, s } = ethers.Signature.from(signature);
 
-            await token.depositWithPermit(tradeId, otherAccount.address, deployer.address, tokenAmount, deadline, v, r, s);
+            await token.depositWithPermit(sellId, seller.address, tokenAmount, deadline, v, r, s);
             
             // `requestTrade` 호출 및 `requestId` 추출
-            const tx = await token.requestTrade(tradeId, otherAccount.address, deployer.address, tokenAmount);
+            const tx = await token.requestTrade(tradeId, sellId, seller.address, tokenAmount, buyId, buyer.address, tokenAmount);
             const receipt = await tx.wait();
 
             // `TradeRequested` 이벤트에서 `reqId` 추출

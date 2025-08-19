@@ -13,15 +13,17 @@ async function main() {
   console.log("--- Debug Permit Data ---");
 
   const tradeId = "trade_" + Date.now();
+  const sellId = "sell_" + Date.now();
+  const buyId = "buy_" + Date.now();
   const tokenAmount = 10;
-  const tradeAmount = ethers.parseUnits(tokenAmount.toString(), 18);
+  const tokenAmountWei = ethers.parseUnits(tokenAmount.toString(), 18);
   const chainId = (await ethers.provider.getNetwork()).chainId;
   const nonce = await token.nonces(seller.address);
   const deadline = Math.floor(Date.now() / 1000) + 300; // 5분
 
   const tx0 = await token.connect(deployer).transferTokensFromContract(
     seller.address,
-    tradeAmount
+    tokenAmountWei
   );
   await tx0.wait();
   console.log("✅ seller get tokens for trading test");
@@ -46,7 +48,7 @@ async function main() {
   const message = {
     owner: seller.address,
     spender: tokenAddress, // depositWithPermit 안에서 사용되는 spender 주소
-    value: tradeAmount,
+    value: tokenAmountWei,
     nonce,
     deadline,
   };
@@ -76,9 +78,8 @@ async function main() {
   // 1단계: depositWithPermit 호출
   console.log("\n--- Calling depositWithPermit ---");
   const tx1 = await token.connect(deployer).depositWithPermit(
-    tradeId,
+    sellId,
     seller.address,
-    buyer.address,
     tokenAmount,
     deadline,
     signature.v || ethers.Signature.from(signature).v,
@@ -101,7 +102,10 @@ async function main() {
   console.log("\n--- Calling requestTrade ---");
   const tx2 = await token.connect(deployer).requestTrade(
     tradeId,
+    sellId,
     seller.address,
+    tokenAmount,
+    buyId,
     buyer.address,
     tokenAmount
   );
