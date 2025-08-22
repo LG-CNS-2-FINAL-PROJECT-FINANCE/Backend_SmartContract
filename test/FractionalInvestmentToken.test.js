@@ -156,7 +156,7 @@ describe("FractionalInvestmentToken (Local Tests without Chainlink)", function (
             // `mockRouter`를 통해 `fulfillRequest`를 호출하고, `token` 컨트랙트에서 이벤트가 발생하는지 확인
             await expect(mockRouter.fulfillRequest(reqId, successResponse, "0x"))
                 .to.emit(token, "InvestmentSuccessful")
-                .withArgs(projectId, investmentId, reqId, otherAccount.address, tokenAmount, "Initial payment verified");
+                .withArgs(projectId, investmentId, reqId, projectId, investmentId, otherAccount.address, tokenAmount, "Initial payment verified");
 
             expect(await token.balanceOf(otherAccount.address)).to.equal(amountWei);
         });
@@ -200,7 +200,7 @@ describe("FractionalInvestmentToken (Local Tests without Chainlink)", function (
             // `mockRouter`를 통해 `fulfillRequest`를 호출하고, `token` 컨트랙트에서 이벤트가 발생하는지 확인
             await expect(mockRouter.fulfillRequest(reqId, successResponse, "0x"))
                 .to.emit(token, "TradeSuccessful")
-                .withArgs(projectId, tradeId, reqId, otherAccount.address, deployer.address, tokenAmount, "Off-chain purchase verified");
+                .withArgs(projectId, tradeId, reqId, projectId, tradeId, otherAccount.address, deployer.address, tokenAmount, "Off-chain purchase verified");
 
             expect(await token.balanceOf(deployer.address)).to.equal(amountWei);
         });
