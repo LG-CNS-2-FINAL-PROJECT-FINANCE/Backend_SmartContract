@@ -1,6 +1,5 @@
 require("dotenv").config();
 
-// 서명을 위한 지갑 설정 (실제 환경에서는 MetaMask 등 연결)
 const ethers = require("ethers");
 const privateKey = process.env.PRIVATE_KEY_USER1;
 const provider = new ethers.JsonRpcProvider(process.env.SEPOLIA_RPC_URL);
@@ -11,14 +10,14 @@ const responseData = {
         "name": "Local Test Fractional Investment Token",
         "version": "1",
         "chainId": 11155111,
-        "verifyingContract": "0xD94E343706B6f266feB663D6696a34b30ff4B121"
+        "verifyingContract": "0xabf49dfe465bb6dfa3c6bd31c84c232eab485b70"
     },
     "message": {
         "owner": "0xBEe09296623Dee35Ae2570De33B6ba017bc2d4d9",
-        "spender": "0xD94E343706B6f266feB663D6696a34b30ff4B121",
-        "value": 100000000000000000000,
+        "spender": "0xabf49dfe465bb6dfa3c6bd31c84c232eab485b70",
+        "value": 100000000000000000000, 
         "nonce": 0,
-        "deadline": 1755435902
+        "deadline": 1755667428
     },
     "types": {
         "Permit": [
@@ -33,46 +32,31 @@ const responseData = {
 
 async function signData() {
     try {
-        
-        // EIP-712 서명을 위한 메시지 데이터 복사 및 변환
         const messageForSigning = { ...responseData.message };
-        
-        // **문제가 되는 'value' 값을 BigInt로 변환**
         messageForSigning.value = BigInt(responseData.message.value);
 
-        // EIP-712 Typed Data 서명
         const signature = await wallet.signTypedData(
             responseData.domain,
             responseData.types,
             messageForSigning
         );
 
-        console.log("생성된 서명:", signature);
+        const { v, r, s } = ethers.Signature.from(signature);
 
-        // 서명 검증 (선택 사항)
-        const recoveredAddress = ethers.verifyTypedData(
-            responseData.domain,
-            responseData.types,
-            messageForSigning,
-            signature
-        );
+        // 요청된 JSON 형식의 로그를 생성
+        const outputLog = {
+            smartContractAddress: responseData.domain.verifyingContract,
+            sellId: "입력하시오",
+            sellerAddress: responseData.message.owner,
+            tokenAmount: "입력하시오",
+            deadline: responseData.message.deadline,
+            v: v,
+            r: r,
+            s: s
+        };
 
-        console.log("복구된 주소:", recoveredAddress);
-        console.log("원래 주소:", wallet.address);
+        console.log(JSON.stringify(outputLog, null, 4));
 
-        if (recoveredAddress.toLowerCase() === wallet.address.toLowerCase()) {
-            console.log("✅ 서명 검증 성공!");
-        } else {
-            console.error("❌ 서명 검증 실패!");
-        }
-
-        const v = ethers.Signature.from(signature).v; // 서명에서 v 값을 추출
-        const r = ethers.Signature.from(signature).r; // 서명에서 r 값을 추출
-        const s = ethers.Signature.from(signature).s; // 서명에서 s 값을 추출
-
-        console.log("v:", v);
-        console.log("r:", r);
-        console.log("s:", s);
     } catch (error) {
         console.error("서명 중 오류 발생:", error);
     }
