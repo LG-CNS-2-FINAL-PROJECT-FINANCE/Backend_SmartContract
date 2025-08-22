@@ -1,4 +1,5 @@
 def CONTRACT_ADDRESS
+def TRANSACTION_HASH
 
 pipeline {
     agent {
@@ -38,9 +39,21 @@ pipeline {
                                 
                                 def deployOutput = sh(returnStdout: true, script: "npm run deploy")
                                 
-                                CONTRACT_ADDRESS = (deployOutput =~ /FractionalInvestmentToken deployed to (0x[a-fA-F0-9]{40})/).collect { it[1] }[0]
+                                def txMatch = (deployOutput =~ /tx:\s*(0x[a-fA-F0-9]{64})\)/)
+                                if (txMatch.size() > 0) {
+                                    TRANSACTION_HASH = txMatch[0][1]
+                                } else {
+                                    error("Failed to extract transaction hash.")
+                                }
+
+                                def contractMatch = (deployOutput =~ /FractionalInvestmentToken deployed to (0x[a-fA-F0-9]{40})/)
+                                if (contractMatch.size() > 0) {
+                                    CONTRACT_ADDRESS = contractMatch[0][1]
+                                } else {
+                                    error("Failed to extract contract address.")
+                                }
                                 
-                                echo "Deployed contract address: ${CONTRACT_ADDRESS}"
+                                echo "Deployed contract address: ${CONTRACT_ADDRESS} by transaction hash : ${TRANSACTION_HASH}"
                             }
                       }
                     }   
@@ -64,6 +77,7 @@ pipeline {
                             -d '{
                                     "projectId":"${params.PROJECT_ID}",
                                     "address":"${CONTRACT_ADDRESS}",
+                                    "transactionHash":"${TRANSACTION_HASH}",
                                     "status":"success"
                                 }' \\
                             "${env.DEPLOY_RESULT_API_URL}"
@@ -86,6 +100,7 @@ pipeline {
                             -d '{
                                     "projectId":"${params.PROJECT_ID}",
                                     "address":"${CONTRACT_ADDRESS}",
+                                    "transactionHash":"${TRANSACTION_HASH}",
                                     "status":"failure"
                                 }' \\
                             "${env.DEPLOY_RESULT_API_URL}"
