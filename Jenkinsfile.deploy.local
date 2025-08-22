@@ -39,16 +39,16 @@ pipeline {
                                 
                                 def deployOutput = sh(returnStdout: true, script: "npm run deploy")
                                 
-                                def txMatch = (deployOutput =~ /tx:\s*(0x[a-fA-F0-9]{64})\)/)
-                                if (txMatch.size() > 0) {
-                                    TRANSACTION_HASH = txMatch[0][1]
+                                def txMatcher = (deployOutput =~ /tx:\s*(0x[a-fA-F0-9]{64})\)/)
+                                if (txMatcher.find()) { 
+                                    TRANSACTION_HASH = txMatcher.group(1)
                                 } else {
-                                    error("Failed to extract transaction hash.")
+                                    error("Failed to extract transaction hash from deploy output.")
                                 }
 
-                                def contractMatch = (deployOutput =~ /FractionalInvestmentToken deployed to (0x[a-fA-F0-9]{40})/)
-                                if (contractMatch.size() > 0) {
-                                    CONTRACT_ADDRESS = contractMatch[0][1]
+                                def contractMatcher = (deployOutput =~ /FractionalInvestmentToken deployed to (0x[a-fA-F0-9]{40})/)
+                                if (contractMatcher.find()) { 
+                                    CONTRACT_ADDRESS = contractMatcher.group(1)
                                 } else {
                                     error("Failed to extract contract address.")
                                 }
