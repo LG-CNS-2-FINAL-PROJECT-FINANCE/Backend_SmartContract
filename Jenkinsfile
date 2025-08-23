@@ -57,7 +57,9 @@ pipeline {
                     echo "Building and pushing image..."
 
                     sh "podman build -t ${DOCKER_IMAGE}:${APP_VERSION} -t ${DOCKER_IMAGE}:latest ."
-                    sh "podman push ${DOCKER_IMAGE} --all-tags"
+                    
+                    sh "podman push ${DOCKER_IMAGE}:${APP_VERSION}"
+                    sh "podman push ${DOCKER_IMAGE}:latest"
                     
                     // 빌드 후 로컬 이미지 제거
                     sh "podman rmi -f ${DOCKER_IMAGE}:${APP_VERSION} ${DOCKER_IMAGE}:latest || true"
