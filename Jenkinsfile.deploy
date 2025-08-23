@@ -71,17 +71,12 @@ pipeline {
                     withEnv(envLines) {
                         echo 'Deployment Pipeline Succeeded!'
                         
-                        sh """
-                            curl -X POST \\
-                            -H "Content-Type: application/json" \\
-                            -d '{
-                                    "projectId":"${params.PROJECT_ID}",
-                                    "address":"${CONTRACT_ADDRESS}",
-                                    "transactionHash":"${TRANSACTION_HASH}",
-                                    "status":"success"
-                                }' \\
-                            "${env.DEPLOY_RESULT_API_URL}"
-                        """
+                        sh '''
+                            curl -X POST \
+                            -H "Content-Type: application/json" \
+                            -d '{ \"projectId\":\"${params.PROJECT_ID}\", \"address\":\"${CONTRACT_ADDRESS}\", \"transactionHash\":\"${TRANSACTION_HASH}\", \"status\":\"success\" }' \
+                            "${env.DEPLOY_RESULT_API_URL}" \
+                        '''
                     }
                 }
             }
@@ -94,17 +89,12 @@ pipeline {
                     withEnv(envLines) {
                         echo 'Deployment Pipeline Failed!'
                         
-                        sh """
-                            curl -X POST \\
-                            -H "Content-Type: application/json" \\
-                            -d '{
-                                    "projectId":"${params.PROJECT_ID}",
-                                    "address":"${CONTRACT_ADDRESS}",
-                                    "transactionHash":"${TRANSACTION_HASH}",
-                                    "status":"failure"
-                                }' \\
-                            "${env.DEPLOY_RESULT_API_URL}"
-                        """
+                        sh '''
+                            curl -X POST \
+                            -H "Content-Type: application/json" \
+                            -d '{ \"projectId\":\"${params.PROJECT_ID}\", \"address\":\"${CONTRACT_ADDRESS}\", \"transactionHash\":\"${TRANSACTION_HASH}\", \"status\":\"failure\" }' \
+                            "${env.DEPLOY_RESULT_API_URL}" \
+                        '''
                     }
                 }
             }
