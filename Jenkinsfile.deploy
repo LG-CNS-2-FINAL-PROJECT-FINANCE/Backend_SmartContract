@@ -2,12 +2,13 @@ def CONTRACT_ADDRESS
 def TRANSACTION_HASH
 
 pipeline {
-    agent {
-        docker {
-            image '192.168.56.200:5000/backend-smart-contract:0.0.1'
+    agent any
 
-            args '-v $HOME/.npm:/root/.npm'
-        }
+    environment {
+        REGISTRY_HOST = "192.168.56.200:5000"
+        USER_EMAIL = 'ssassaium@gmail.com'
+        USER_ID = 'kaebalsaebal'
+        SERVICE_NAME = 'backend-smart-contract'
     }
 
     parameters {
@@ -19,7 +20,7 @@ pipeline {
     }
 
     stages {        
-        stage('Test & Deploy') {
+        stage('Test') {
             steps {
                 script {
                     withCredentials([file(credentialsId: 'ENV_FILE', variable: 'SECRET_FILE_PATH')]) {
@@ -33,11 +34,33 @@ pipeline {
                                 "TOTAL_GOAL_AMOUNT=${params.TOTAL_GOAL_AMOUNT}",
                                 "MIN_AMOUNT=${params.MIN_AMOUNT}",
                             ]) {
-                                echo 'Running tests...'
+                                echo 'Running tests in a Podman container...'
 
-                                sh 'npm run test'
+                                sh "podman run --rm -v ${PWD}:/app -w /app ${REGISTRY_HOST}/${SERVICE_NAME}:latest /bin/bash -c 'npm run test'"
+
+                            }
+                        }
+                    }   
+                }
+            }
+        }
+        stage('Deploy') {
+            steps {
+                script {
+                    withCredentials([file(credentialsId: 'ENV_FILE', variable: 'SECRET_FILE_PATH')]) {
+                        def loadedEnvsString = sh(returnStdout: true, script: "cat ${SECRET_FILE_PATH} | xargs").trim()
+                        def envList = loadedEnvsString.tokenize(' ').collect { it.trim() }
+
+                        withEnv(envList) {
+                            withEnv([
+                                "TOKEN_NAME=${params.TOKEN_NAME}",
+                                "TOKEN_SYMBOL=${params.TOKEN_SYMBOL}",
+                                "TOTAL_GOAL_AMOUNT=${params.TOTAL_GOAL_AMOUNT}",
+                                "MIN_AMOUNT=${params.MIN_AMOUNT}",
+                            ]) {
+                                echo 'Running deployment in a Podman container...'
                                 
-                                def deployOutput = sh(returnStdout: true, script: "npm run deploy")
+                                def deployOutput = sh(returnStdout: true, script: "podman run --rm -v ${PWD}:/app -w /app ${REGISTRY_HOST}/${SERVICE_NAME}:latest /bin/bash -c 'npm run deploy'")
                                 
                                 def txMatcher = (deployOutput =~ /tx:\s*(0x[a-fA-F0-9]{64})\)/)
                                 if (txMatcher.find()) { 
@@ -55,7 +78,7 @@ pipeline {
                                 
                                 echo "Deployed contract address: ${CONTRACT_ADDRESS}"
                             }
-                      }
+                        }
                     }   
                 }
             }
