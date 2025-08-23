@@ -1,7 +1,7 @@
 #!/usr/bin/env groovy
 def APP_NAME
 def APP_VERSION
-def DOCKER_IMAGE_NAME_WITH_VER
+def DOCKER_IMAGE
 
 pipeline {
     agent any
@@ -10,7 +10,7 @@ pipeline {
         REGISTRY_HOST = "192.168.56.200:5000"
         USER_EMAIL = 'ssassaium@gmail.com'
         USER_ID = 'kaebalsaebal'
-        SERVICE_NAME = 'smart_contract'
+        SERVICE_NAME = 'backend-smart-contract'
     }
 
     tools {
@@ -42,58 +42,25 @@ pipeline {
                         returnStdout: true
                     ).trim()
         
-                    DOCKER_IMAGE_NAME_WITH_VER = "${REGISTRY_HOST}/${APP_NAME}:${APP_VERSION}"
+                    DOCKER_IMAGE = "${REGISTRY_HOST}/${APP_NAME}"
         
                     sh "echo IMAGE_NAME is ${APP_NAME}"
                     sh "echo IMAGE_VERSION is ${APP_VERSION}"
-                    sh "echo DOCKER_IMAGE_NAME_WITH_VER is ${DOCKER_IMAGE_NAME_WITH_VER}"
+                    sh "echo DOCKER_IMAGE is ${DOCKER_IMAGE}"
                 }
             }
         }
-
-        /*
-        stage('Set Version') {
-            agent {
-                docker {
-                    image 'node:18-alpine'
-                    args '-v $PWD:/app' // 현재 프로젝트 디렉터리를 컨테이너의 /app으로 마운트합니다.
-                }
-            }
-            steps {
-                script {
-                    echo '도커 이미지 이름과 태그를 동적으로 설정합니다...'
-
-                    // Hardhat 프로젝트의 package.json에서 이름과 버전을 가져옵니다.
-                    APP_NAME = sh (
-                        script: 'node -p "require(\'./package.json\').name"',
-                        returnStdout: true
-                    ).trim()
-                    
-                    APP_VERSION = sh (
-                        script: 'node -p "require(\'./package.json\').version"',
-                        returnStdout: true
-                    ).trim()
-
-                    DOCKER_IMAGE_NAME_WITH_VER = "${REGISTRY_HOST}/${APP_NAME}:${APP_VERSION}"
-                    
-                    sh "echo IMAGE_NAME is ${APP_NAME}"
-                    sh "echo IMAGE_VERSION is ${APP_VERSION}"
-                    sh "echo DOCKER_IMAGE_NAME_WITH_VER is ${DOCKER_IMAGE_NAME_WITH_VER}"
-                }
-            }
-        }
-        */
         
         stage('Image Build and Push') {
             steps {
                 script {
                     echo "Building and pushing image..."
 
-                    sh "podman build -t ${DOCKER_IMAGE_NAME_WITH_VER} ."
-                    sh "podman push ${DOCKER_IMAGE_NAME_WITH_VER}"
+                    sh "podman build -t ${DOCKER_IMAGE}:${APP_VERSION} -t ${DOCKER_IMAGE}:latest ."
+                    sh "podman push ${DOCKER_IMAGE} --all-tags"
                     
                     // 빌드 후 로컬 이미지 제거
-                    sh "podman rmi -f ${DOCKER_IMAGE_NAME_WITH_VER} || true"
+                    sh "podman rmi -f ${DOCKER_IMAGE}:${APP_VERSION} ${DOCKER_IMAGE}:latest || true"
                 }
             }
         }
