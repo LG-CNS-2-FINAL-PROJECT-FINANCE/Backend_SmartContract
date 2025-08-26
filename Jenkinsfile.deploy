@@ -23,23 +23,8 @@ pipeline {
         stage('Test') {
             steps {
                 script {
-                    withCredentials([file(credentialsId: 'ENV_FILE', variable: 'SECRET_FILE_PATH')]) {
-                        def loadedEnvsString = sh(returnStdout: true, script: "cat ${SECRET_FILE_PATH} | xargs").trim()
-                        def envList = loadedEnvsString.tokenize(' ').collect { it.trim() }
-
-                        withEnv(envList) {
-                            withEnv([
-                                "TOKEN_NAME=${params.TOKEN_NAME}",
-                                "TOKEN_SYMBOL=${params.TOKEN_SYMBOL}",
-                                "TOTAL_GOAL_AMOUNT=${params.TOTAL_GOAL_AMOUNT}",
-                                "MIN_AMOUNT=${params.MIN_AMOUNT}",
-                            ]) {
-                                echo 'Running tests in a Podman container...'
-
-                                sh "podman run --rm -v ${PWD}:/app -w /app ${REGISTRY_HOST}/${SERVICE_NAME}:latest npm run test"
-                            }
-                        }
-                    }   
+                    echo 'Running tests in a Podman container...'
+                    sh "podman run --rm -w /app ${REGISTRY_HOST}/${SERVICE_NAME}:latest npm run test"
                 }
             }
         }
@@ -52,15 +37,30 @@ pipeline {
 
                         withEnv(envList) {
                             withEnv([
+                                "PROJECT_ID=${params.PROJECT_ID}",
                                 "TOKEN_NAME=${params.TOKEN_NAME}",
                                 "TOKEN_SYMBOL=${params.TOKEN_SYMBOL}",
                                 "TOTAL_GOAL_AMOUNT=${params.TOTAL_GOAL_AMOUNT}",
                                 "MIN_AMOUNT=${params.MIN_AMOUNT}",
                             ]) {
                                 echo 'Running deployment in a Podman container...'
-                                
-                                def deployOutput = sh(returnStdout: true, script: "podman run --rm -v ${PWD}:/app -w /app ${REGISTRY_HOST}/${SERVICE_NAME}:latest npm run deploy")
-                                
+
+                                def envArgs = envList.collect { "-e ${it}" }.join(" ") +
+                                            " -e PROJECT_ID=${params.PROJECT_ID}" +
+                                            " -e TOKEN_NAME=${params.TOKEN_NAME}" +
+                                            " -e TOKEN_SYMBOL=${params.TOKEN_SYMBOL}" +
+                                            " -e TOTAL_GOAL_AMOUNT=${params.TOTAL_GOAL_AMOUNT}" +
+                                            " -e MIN_AMOUNT=${params.MIN_AMOUNT}"
+
+                                def deployOutput = sh(
+                                    returnStdout: true,
+                                    script: """
+                                        podman run --rm -w /app ${envArgs} ${REGISTRY_HOST}/${SERVICE_NAME}:latest npm run deploy
+                                    """
+                                ).trim()
+
+                                echo "${deployOutput}"
+
                                 def txMatcher = (deployOutput =~ /tx:\s*(0x[a-fA-F0-9]{64})\)/)
                                 if (txMatcher.find()) { 
                                     TRANSACTION_HASH = txMatcher.group(1)
@@ -74,11 +74,11 @@ pipeline {
                                 } else {
                                     error("Failed to extract contract address.")
                                 }
-                                
+
                                 echo "Deployed contract address: ${CONTRACT_ADDRESS}"
                             }
                         }
-                    }   
+                    }
                 }
             }
         }
@@ -93,12 +93,17 @@ pipeline {
                     withEnv(envLines) {
                         echo 'Deployment Pipeline Succeeded!'
                         
-                        sh '''
-                            curl -X POST \
-                            -H "Content-Type: application/json" \
-                            -d '{ \"projectId\":\"${params.PROJECT_ID}\", \"address\":\"${CONTRACT_ADDRESS}\", \"transactionHash\":\"${TRANSACTION_HASH}\", \"status\":\"success\" }' \
-                            "${env.DEPLOY_RESULT_API_URL}" \
-                        '''
+                        sh """
+                            curl -X POST \\
+                            -H "Content-Type: application/json" \\
+                            -d '{
+                                    "projectId":"${params.PROJECT_ID}",
+                                    "address":"${CONTRACT_ADDRESS}",
+                                    "transactionHash":"${TRANSACTION_HASH}",
+                                    "status":"success"
+                                }' \\
+                            "${env.DEPLOY_RESULT_API_URL}"
+                        """
                     }
                 }
             }
@@ -111,12 +116,17 @@ pipeline {
                     withEnv(envLines) {
                         echo 'Deployment Pipeline Failed!'
                         
-                        sh '''
-                            curl -X POST \
-                            -H "Content-Type: application/json" \
-                            -d '{ \"projectId\":\"${params.PROJECT_ID}\", \"address\":\"${CONTRACT_ADDRESS}\", \"transactionHash\":\"${TRANSACTION_HASH}\", \"status\":\"failure\" }' \
-                            "${env.DEPLOY_RESULT_API_URL}" \
-                        '''
+                        sh """
+                            curl -X POST \\
+                            -H "Content-Type: application/json" \\
+                            -d '{
+                                    "projectId":"${params.PROJECT_ID}",
+                                    "address":"${CONTRACT_ADDRESS}",
+                                    "transactionHash":"${TRANSACTION_HASH}",
+                                    "status":"failure"
+                                }' \\
+                            "${env.DEPLOY_RESULT_API_URL}"
+                        """
                     }
                 }
             }
