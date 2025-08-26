@@ -36,6 +36,8 @@ pipeline {
                             ]) {
                                 echo 'Running tests in a Podman container...'
 
+                                sh "podman run --rm -v ${WORKSPACE}:/app -w /app ${REGISTRY_HOST}/${SERVICE_NAME}:latest ls -R /app"
+
                                 sh "podman run --rm -v ${WORKSPACE}:/app -w /app ${REGISTRY_HOST}/${SERVICE_NAME}:latest npm run test"
                             }
                         }
