@@ -33,12 +33,13 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
 
     // --- 1차 발행 관련 상태 변수 (key = investmentId) ---
     struct investment {
+        string investId;
         address investmentor;
         uint256 tokenAmount;
         bool processState;
     }
     mapping(string => investment) public investmentRecord;
-    mapping(bytes32 => string) public investmentKey; // (chainlinkId -> investmentId)
+    mapping(bytes32 => string[]) public investmentKey; // (chainlinkId -> investmentId)
 
     // --- 2차 거래 관련 상태 변수 ---
     // --- 2차 거래 판매 요청 (key = sellId) ---
@@ -68,11 +69,9 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     // --- 토큰 전송이 불가 기간 ---
     mapping(address => uint256) private lockupUntil;
 
-    event InvestmentRequested(bytes32 indexed projectIndex, string indexed investmentIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string investmentId, address buyer, uint256 tokenAmount);
     event InvestmentSuccessful(bytes32 indexed projectIndex, string indexed investmentIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string investmentId, address buyer, uint256 tokenAmount, string chainlinkResult);
     event InvestmentFailed(bytes32 indexed projectIndex, string indexed investmentIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string investmentId, uint256 status, string reason);
 
-    event TradeRequested(bytes32 indexed projectIndex, string indexed tradeIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string tradeId, address seller, address buyer, uint256 tokenAmount);
     event TradeSuccessful(bytes32 indexed projectIndex, string indexed tradeIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string tradeId, address seller, address buyer, uint256 tokenAmount, string chainlinkResult);
     event TradeFailed(bytes32 indexed projectIndex, string indexed tradeIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string tradeId, uint256 status, string reason);
 
@@ -143,26 +142,36 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     }
 
     // --- 1차 발행 ---
-    function requestInvestment(
-        string memory _investmentId,
-        address _buyer,
-        uint256 _tokenAmount
-    ) public onlyOwner whenNotPaused {
-        require(!investmentRecord[_investmentId].processState, "Initial request already processed or pending.");
-        require(_buyer != address(0), "Buyer address cannot be zero.");
-        require(_tokenAmount > 0, "Token amount must be greater than 0.");
-        require(balanceOf(address(this)) >= _tokenAmount * (10 ** decimals()), "Not enough tokens in contract for this initial request.");
+    function requestInvestment(investment[] memory _investments) public onlyOwner whenNotPaused {
+        string[] memory args = new string[](_investments.length);
+        string[] memory investmentIdList = new string[](_investments.length);
 
-        investmentRecord[_investmentId].investmentor = _buyer;
-        investmentRecord[_investmentId].tokenAmount = _tokenAmount;
+        for (uint i = 0; i < _investments.length; i++) {
+            require(!investmentRecord[_investments[i].investId].processState, "Initial request already processed or pending.");
+            require(_investments[i].investmentor != address(0), "Buyer address cannot be zero.");
+            require(_investments[i].tokenAmount > 0, "Token amount must be greater than 0.");
+            require(balanceOf(address(this)) >= _investments[i].tokenAmount * (10 ** decimals()), "Not enough tokens in contract for this initial request.");
+        }
+
+        for (uint i = 0; i < _investments.length; i++) {
+            investmentRecord[_investments[i].investId].investmentor = _investments[i].investmentor;
+            investmentRecord[_investments[i].investId].tokenAmount = _investments[i].tokenAmount;
+
+            string memory investorData = string(abi.encodePacked(
+                _investments[i].investId, ",",
+                _investments[i].investmentor, ",",
+                _investments[i].tokenAmount
+            ));
+            args[i] = investorData;
+
+            investmentIdList[i] = _investments[i].investId;
+        }
 
         // External API
         FunctionsRequest.Request memory req;
         req.initializeRequestForInlineJavaScript(s_investmentSourceCode);
 
         // Transfer Parameters to Javascript Source Code
-        string[] memory args = new string[](1);
-        args[0] = _investmentId;
         req.setArgs(args);
 
         // 외부 요청 API KEY
@@ -171,9 +180,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         // }
 
         bytes32 chainlinkReqId = _sendRequest(req.encodeCBOR(), s_subscriptionId, GAS_LIMIT, s_donId);
-        investmentKey[chainlinkReqId] = _investmentId;
-
-        emit InvestmentRequested(projectId, _investmentId, chainlinkReqId, projectId, _investmentId, _buyer, _tokenAmount);
+        investmentKey[chainlinkReqId] = investmentIdList;
     }
 
     function fulfillRequest(
@@ -181,13 +188,16 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         bytes memory _response,
         bytes memory _err
     ) internal override {
-        string memory investmentId = investmentKey[_chainlinkRequestId];
+        string[] memory investmentIdList = investmentKey[_chainlinkRequestId];
         string memory tradeId = tradeKey[_chainlinkRequestId];
 
-        if (bytes(investmentId).length > 0) {
-            _handleInvestmentFulfillment(_chainlinkRequestId, investmentId, _response, _err);
-        } else if (bytes(tradeId).length > 0) {
+        if (bytes(tradeId).length > 0) {
             _handleTradeFulfillment(_chainlinkRequestId, tradeId, _response, _err);
+        }
+        else if (investmentIdList.length > 0) {
+            for (uint i = 0; i < investmentIdList.length; i++) {
+                _handleInvestmentFulfillment(_chainlinkRequestId, investmentIdList[i], _response, _err);
+            }
         } else {
             revert("Unknown Chainlink request ID");
         }
@@ -312,8 +322,6 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
 
         bytes32 chainlinkReqId = _sendRequest(req.encodeCBOR(), s_subscriptionId, GAS_LIMIT, s_donId);
         tradeKey[chainlinkReqId] = _tradeId;
-
-        emit TradeRequested(projectId, _tradeId, chainlinkReqId, projectId, _tradeId, _seller, _buyer, _sellAmount);
     }
 
     function _handleTradeFulfillment(
