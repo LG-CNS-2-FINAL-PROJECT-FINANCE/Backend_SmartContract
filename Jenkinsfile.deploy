@@ -59,6 +59,8 @@ pipeline {
                                     """
                                 ).trim()
 
+                                echo "${deployOutput}"
+
                                 def txMatcher = (deployOutput =~ /tx:\s*(0x[a-fA-F0-9]{64})\)/)
                                 if (txMatcher.find()) { 
                                     TRANSACTION_HASH = txMatcher.group(1)
@@ -91,12 +93,16 @@ pipeline {
                     withEnv(envLines) {
                         echo 'Deployment Pipeline Succeeded!'
                         
-                        sh '''
-                            curl -X POST \
-                            -H "Content-Type: application/json" \
-                            -d '{ \"projectId\":\"${params.PROJECT_ID}\", \"address\":\"${CONTRACT_ADDRESS}\", \"transactionHash\":\"${TRANSACTION_HASH}\", \"status\":\"success\" }' \
-                            "${env.DEPLOY_RESULT_API_URL}" \
-                        '''
+                        sh """
+                            curl -X POST \\
+                            -H "Content-Type: application/json" \\
+                            -d '{
+                                    "projectId":"${params.PROJECT_ID}",
+                                    "address":"${CONTRACT_ADDRESS}",
+                                    "status":"success"
+                                }' \\
+                            "${env.DEPLOY_RESULT_API_URL}"
+                        """
                     }
                 }
             }
@@ -109,12 +115,16 @@ pipeline {
                     withEnv(envLines) {
                         echo 'Deployment Pipeline Failed!'
                         
-                        sh '''
-                            curl -X POST \
-                            -H "Content-Type: application/json" \
-                            -d '{ \"projectId\":\"${params.PROJECT_ID}\", \"address\":\"${CONTRACT_ADDRESS}\", \"transactionHash\":\"${TRANSACTION_HASH}\", \"status\":\"failure\" }' \
-                            "${env.DEPLOY_RESULT_API_URL}" \
-                        '''
+                        sh """
+                            curl -X POST \\
+                            -H "Content-Type: application/json" \\
+                            -d '{
+                                    "projectId":"${params.PROJECT_ID}",
+                                    "address":"${CONTRACT_ADDRESS}",
+                                    "status":"failure"
+                                }' \\
+                            "${env.DEPLOY_RESULT_API_URL}"
+                        """
                     }
                 }
             }
