@@ -23,23 +23,8 @@ pipeline {
         stage('Test') {
             steps {
                 script {
-                    withCredentials([file(credentialsId: 'ENV_FILE', variable: 'SECRET_FILE_PATH')]) {
-                        def loadedEnvsString = sh(returnStdout: true, script: "cat ${SECRET_FILE_PATH} | xargs").trim()
-                        def envList = loadedEnvsString.tokenize(' ').collect { it.trim() }
-
-                        withEnv(envList) {
-                            withEnv([
-                                "TOKEN_NAME=${params.TOKEN_NAME}",
-                                "TOKEN_SYMBOL=${params.TOKEN_SYMBOL}",
-                                "TOTAL_GOAL_AMOUNT=${params.TOTAL_GOAL_AMOUNT}",
-                                "MIN_AMOUNT=${params.MIN_AMOUNT}",
-                            ]) {
-                                echo 'Running tests in a Podman container...'
-
-                                sh "podman run --rm -w /app ${REGISTRY_HOST}/${SERVICE_NAME}:latest npm run test"
-                            }
-                        }
-                    }   
+                    echo 'Running tests in a Podman container...'
+                    sh "podman run --rm -w /app ${REGISTRY_HOST}/${SERVICE_NAME}:latest npm run test"
                 }
             }
         }

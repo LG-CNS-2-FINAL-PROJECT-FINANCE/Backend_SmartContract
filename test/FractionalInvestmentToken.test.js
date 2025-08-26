@@ -35,11 +35,11 @@ describe("FractionalInvestmentToken (Local Tests without Chainlink)", function (
         const investmentSourceCode = "return Functions.encodeUint256(1);";
         const tradeSourceCode = "return Functions.encodeUint256(1);";
 
-        projectId = ethers.encodeBytes32String(process.env.PROJECT_ID);
-        name = process.env.TOKEN_NAME;
-        symbol = process.env.TOKEN_SYMBOL;
-        totalGoalAmount = process.env.TOTAL_GOAL_AMOUNT;
-        minAmount = process.env.MIN_AMOUNT;
+        projectId = ethers.encodeBytes32String("Test Project Id");
+        name = "Depoly Test Fractional Investment Token";
+        symbol = "DTFIT";
+        totalGoalAmount = 1000000;
+        minAmount = 100;
 
         const FractionalInvestmentToken = await ethers.getContractFactory("FractionalInvestmentToken");
         token = await FractionalInvestmentToken.deploy(
