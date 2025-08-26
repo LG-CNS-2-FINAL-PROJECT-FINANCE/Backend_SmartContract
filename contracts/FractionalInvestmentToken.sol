@@ -69,6 +69,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     // --- 토큰 전송이 불가 기간 ---
     mapping(address => uint256) private lockupUntil;
 
+    event InvestmentRequested(bytes32 indexed projectIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, investment[] investmentList);
     event InvestmentSuccessful(bytes32 indexed projectIndex, string indexed investmentIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string investmentId, address buyer, uint256 tokenAmount, string chainlinkResult);
     event InvestmentFailed(bytes32 indexed projectIndex, string indexed investmentIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string investmentId, uint256 status, string reason);
 
@@ -182,6 +183,8 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
 
         bytes32 chainlinkReqId = _sendRequest(req.encodeCBOR(), s_subscriptionId, GAS_LIMIT, s_donId);
         investmentKey[chainlinkReqId] = investmentIdList;
+
+        emit InvestmentRequested(projectId, chainlinkReqId, projectId, _investments);
     }
 
     function fulfillRequest(
