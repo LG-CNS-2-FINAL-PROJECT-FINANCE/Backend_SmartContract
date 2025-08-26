@@ -72,6 +72,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     event InvestmentSuccessful(bytes32 indexed projectIndex, string indexed investmentIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string investmentId, address buyer, uint256 tokenAmount, string chainlinkResult);
     event InvestmentFailed(bytes32 indexed projectIndex, string indexed investmentIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string investmentId, uint256 status, string reason);
 
+    event TradeRequested(bytes32 indexed projectIndex, string indexed tradeIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string tradeId, address seller, address buyer, uint256 tokenAmount);
     event TradeSuccessful(bytes32 indexed projectIndex, string indexed tradeIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string tradeId, address seller, address buyer, uint256 tokenAmount, string chainlinkResult);
     event TradeFailed(bytes32 indexed projectIndex, string indexed tradeIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string tradeId, uint256 status, string reason);
 
@@ -322,6 +323,8 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
 
         bytes32 chainlinkReqId = _sendRequest(req.encodeCBOR(), s_subscriptionId, GAS_LIMIT, s_donId);
         tradeKey[chainlinkReqId] = _tradeId;
+
+        emit TradeRequested(projectId, _tradeId, chainlinkReqId, projectId, _tradeId, _seller, _buyer, _sellAmount);
     }
 
     function _handleTradeFulfillment(
