@@ -36,9 +36,9 @@ pipeline {
                             ]) {
                                 echo 'Running tests in a Podman container...'
 
-                                sh "podman run --rm -v ${WORKSPACE}:/app -w /app ${REGISTRY_HOST}/${SERVICE_NAME}:latest ls -R /app"
+                                sh "podman run --rm -w /app ${REGISTRY_HOST}/${SERVICE_NAME}:latest ls -R /app"
 
-                                sh "podman run --rm -v ${WORKSPACE}:/app -w /app ${REGISTRY_HOST}/${SERVICE_NAME}:latest npm run test"
+                                sh "podman run --rm -w /app ${REGISTRY_HOST}/${SERVICE_NAME}:latest npm run test"
                             }
                         }
                     }   
@@ -61,7 +61,7 @@ pipeline {
                             ]) {
                                 echo 'Running deployment in a Podman container...'
                                 
-                                def deployOutput = sh(returnStdout: true, script: "podman run --rm -v ${WORKSPACE}:/app -w /app ${REGISTRY_HOST}/${SERVICE_NAME}:latest npm run deploy")
+                                def deployOutput = sh(returnStdout: true, script: "podman run --rm -w /app ${REGISTRY_HOST}/${SERVICE_NAME}:latest npm run deploy")
                                 
                                 def txMatcher = (deployOutput =~ /tx:\s*(0x[a-fA-F0-9]{64})\)/)
                                 if (txMatcher.find()) { 
