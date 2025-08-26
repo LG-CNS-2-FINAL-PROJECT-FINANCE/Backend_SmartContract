@@ -99,6 +99,7 @@ pipeline {
                             -d '{
                                     "projectId":"${params.PROJECT_ID}",
                                     "address":"${CONTRACT_ADDRESS}",
+                                    "transactionHash":"${TRANSACTION_HASH}",
                                     "status":"success"
                                 }' \\
                             "${env.DEPLOY_RESULT_API_URL}"
@@ -121,6 +122,7 @@ pipeline {
                             -d '{
                                     "projectId":"${params.PROJECT_ID}",
                                     "address":"${CONTRACT_ADDRESS}",
+                                    "transactionHash":"${TRANSACTION_HASH}",
                                     "status":"failure"
                                 }' \\
                             "${env.DEPLOY_RESULT_API_URL}"
