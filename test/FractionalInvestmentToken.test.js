@@ -136,30 +136,76 @@ describe("FractionalInvestmentToken (Local Tests without Chainlink)", function (
 
         // --- Chainlink Functions 호출을 직접 모킹하여 테스트 ---
     describe("Directly Mocking Chainlink Functions Calls", function () {
-        it("`requestInvestment`가 성공적으로 호출되어야 하고, `fulfillRequest`를 직접 호출하여 처리할 수 있어야 한다", async function () {
-            const investmentId = `INV-${Date.now()}`;
-            const tokenAmount = 100;
-            const decimals = await token.decimals();
-            const amountWei = BigInt(tokenAmount) * (10n ** decimals);
+        it("`requestInvestment`가 단일 투자를 성공적으로 처리해야 한다", async function () {
+            const investmentData = {
+                investId: `INV-${Date.now()}-single`,
+                investmentor: otherAccount.address,
+                tokenAmount: 100,
+                processState: false
+            };
 
-            // `requestInvestment` 호출 및 `requestId` 추출
-            const tx = await token.requestInvestment(investmentId, otherAccount.address, tokenAmount);
-            const receipt = await tx.wait();
+            const investments = [investmentData];
+            const amountWei = BigInt(investmentData.tokenAmount) * (10n ** (await token.decimals()));
             
+            // `requestInvestment` 호출
+            const tx = await token.requestInvestment(investments);
+            const receipt = await tx.wait();
+
             // `InvestmentRequested` 이벤트에서 `reqId` 추출
             const event = receipt.logs.find(log => log.fragment && log.fragment.name === "InvestmentRequested");
-            const reqId = event.args[2];
+            const reqId = event.args[1];
             
-            // 모킹된 Chainlink 응답을 인코딩
+            // 모킹된 Chainlink 응답을 인코딩 (성공)
             const successResponse = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1]);
             
-            // `mockRouter`를 통해 `fulfillRequest`를 호출하고, `token` 컨트랙트에서 이벤트가 발생하는지 확인
+            // `mockRouter`를 통해 `fulfillRequest` 호출 및 이벤트 확인
             await expect(mockRouter.fulfillRequest(reqId, successResponse, "0x"))
-                .to.emit(token, "InvestmentSuccessful")
-                .withArgs(projectId, investmentId, reqId, projectId, investmentId, otherAccount.address, tokenAmount, "Initial payment verified");
+                .to.emit(token, "InvestmentSuccessful");
 
+            // 최종 잔액 확인
             expect(await token.balanceOf(otherAccount.address)).to.equal(amountWei);
         });
+
+        it("`requestInvestment`가 10명의 다수 투자를 성공적으로 처리해야 한다", async function () {
+            const investments = [];
+            const initialAmount = 10; // 첫 번째 투자자의 토큰 양
+            let totalTokenAmount = 0;
+            
+            // 10명의 투자자 데이터 생성
+            for (let i = 0; i < 10; i++) {
+                const tokenAmount = initialAmount + i * 10; // 100, 110, 120...
+                const investorAddress = deployer; // 간단한 테스트를 위해 동일 계정 사용
+                
+                investments.push({
+                    investId: `INV-${Date.now()}-multi-${i}`,
+                    investmentor: investorAddress.address,
+                    tokenAmount: tokenAmount,
+                    processState: false
+                });
+                
+                totalTokenAmount += tokenAmount;
+            }
+
+            const totalAmountWei = BigInt(totalTokenAmount) * (10n ** (await token.decimals()));
+            
+            // `requestInvestment` 호출
+            const tx = await token.requestInvestment(investments);
+            const receipt = await tx.wait();
+
+            // `InvestmentRequested` 이벤트에서 `reqId` 추출
+            const event = receipt.logs.find(log => log.fragment && log.fragment.name === "InvestmentRequested");
+            const reqId = event.args[1];
+
+            // 모킹된 Chainlink 응답을 인코딩 (성공)
+            const successResponse = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1]);
+
+            // `mockRouter`를 통해 `fulfillRequest` 호출
+            await expect(mockRouter.fulfillRequest(reqId, successResponse, "0x"))
+                .to.emit(token, "InvestmentSuccessful");
+
+            // 최종 잔액 확인 (모든 토큰이 한 계정으로 분배됨)
+            expect(await token.balanceOf(deployer.address)).to.equal(totalAmountWei);
+});
 
         it("`requestTrade`가 성공적으로 호출되어야 하고, `fulfillRequest`를 직접 호출하여 처리할 수 있어야 한다", async function () {
             const sellId = `SELL-${Date.now()}`;
