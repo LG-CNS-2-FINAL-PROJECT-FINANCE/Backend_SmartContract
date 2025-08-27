@@ -197,11 +197,24 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         string memory tradeId = tradeKey[_chainlinkRequestId];
 
         if (bytes(tradeId).length > 0) {
-            _handleTradeFulfillment(_chainlinkRequestId, tradeId, _response, _err);
+            uint256 result = abi.decode(_response, (uint256));
+
+            _handleTradeFulfillment(_chainlinkRequestId, tradeId, result, _err);
         }
         else if (investmentIdList.length > 0) {
+            uint256[] memory results;
+            if (_response.length > 0) {
+                results = abi.decode(_response, (uint256[]));
+            }
+
             for (uint i = 0; i < investmentIdList.length; i++) {
-                _handleInvestmentFulfillment(_chainlinkRequestId, investmentIdList[i], _response, _err);
+                uint256 result = (results.length > i) ? results[i] : 0;
+                _handleInvestmentFulfillment(
+                    _chainlinkRequestId,
+                    investmentIdList[i],
+                    result,
+                    _err
+                );
             }
         } else {
             revert("Unknown Chainlink request ID");
@@ -211,7 +224,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     function _handleInvestmentFulfillment(
         bytes32 _chainlinkRequestId,
         string memory _investmentId,
-        bytes memory _response,
+        uint256 _result,
         bytes memory _err
     ) private {
         if (investmentRecord[_investmentId].processState) {
@@ -227,9 +240,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         address buyer = investmentRecord[_investmentId].investmentor;
         uint256 amount = investmentRecord[_investmentId].tokenAmount;
 
-        uint256 result = abi.decode(_response, (uint256));
-
-        if (result == 1) {
+        if (_result == 1) {
             if (balanceOf(address(this)) >= amount * (10 ** decimals())) {         
                 _transfer(address(this), buyer, amount * (10 ** decimals()));
 
@@ -334,7 +345,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     function _handleTradeFulfillment(
         bytes32 _chainlinkRequestId,
         string memory _tradeId,
-        bytes memory _response,
+        uint256 _result,
         bytes memory _err
     ) private {
         if (tradeRecord[_tradeId].processState) {
@@ -352,9 +363,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         uint256 amount = tradeRecord[_tradeId].sellRecord.sellAmount;
         uint256 tradeAmountWei = amount * (10 ** decimals());
 
-        uint256 result = abi.decode(_response, (uint256));
-
-        if (result == 1) {
+        if (_result == 1) {
             if (balanceOf(address(this)) < tradeAmountWei) {
                 emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, SMART_CONTRACT_FAILED, "Insufficient contract token supply for transfer.");
                 pause();
