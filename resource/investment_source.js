@@ -4,7 +4,7 @@ const investmentsList = investmentsData.map(dataString => {
     const parts = dataString.split(',');
     
     return {
-        investId: parts[0],
+        investmentId: parts[0],
         investorAddress: parts[1],
         tokenAmount: parseInt(parts[2])
     };
