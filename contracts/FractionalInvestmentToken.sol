@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
 import {FunctionsClient} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/FunctionsClient.sol";
 import {FunctionsRequest} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/libraries/FunctionsRequest.sol";
 import {IFunctionsSubscriptions} from "@chainlink/contracts/src/v0.8/functions/v1_0_0/interfaces/IFunctionsSubscriptions.sol";
@@ -161,8 +162,8 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
 
             string memory investorData = string(abi.encodePacked(
                 _investments[i].investId, ",",
-                _investments[i].investmentor, ",",
-                _investments[i].tokenAmount
+                Strings.toHexString(_investments[i].investmentor), ",", // 주소 변환
+                Strings.toString(_investments[i].tokenAmount) // uint256 변환
             ));
             args[i] = investorData;
 
