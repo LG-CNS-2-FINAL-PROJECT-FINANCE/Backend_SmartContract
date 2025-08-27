@@ -156,7 +156,7 @@ describe("FractionalInvestmentToken (Local Tests without Chainlink)", function (
             const reqId = event.args[1];
             
             // 모킹된 Chainlink 응답을 인코딩 (성공)
-            const successResponse = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1]);
+            const successResponse = ethers.AbiCoder.defaultAbiCoder().encode(["uint256[]"], [[1]]);
             
             // `mockRouter`를 통해 `fulfillRequest` 호출 및 이벤트 확인
             await expect(mockRouter.fulfillRequest(reqId, successResponse, "0x"))
@@ -194,18 +194,22 @@ describe("FractionalInvestmentToken (Local Tests without Chainlink)", function (
 
             // `InvestmentRequested` 이벤트에서 `reqId` 추출
             const event = receipt.logs.find(log => log.fragment && log.fragment.name === "InvestmentRequested");
-            const reqId = event.args[1];
+            const reqId = event.args[1];    
+            
+            // 10명의 투자에 대한 성공 응답 배열을 생성
+            const successResults = Array(10).fill(1); // [1, 1, ..., 1]
 
-            // 모킹된 Chainlink 응답을 인코딩 (성공)
-            const successResponse = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [1]);
+            // 이 배열을 'uint256[]' 타입으로 인코딩합니다.
+            const successResponse = ethers.AbiCoder.defaultAbiCoder().encode(["uint256[]"], [successResults]);
+
 
             // `mockRouter`를 통해 `fulfillRequest` 호출
             await expect(mockRouter.fulfillRequest(reqId, successResponse, "0x"))
                 .to.emit(token, "InvestmentSuccessful");
 
             // 최종 잔액 확인 (모든 토큰이 한 계정으로 분배됨)
-            expect(await token.balanceOf(deployer.address)).to.equal(totalAmountWei);
-});
+            expect(await token.balanceOf(deployer.address)).to.equal(totalAmountWei);   
+        });
 
         it("`requestTrade`가 성공적으로 호출되어야 하고, `fulfillRequest`를 직접 호출하여 처리할 수 있어야 한다", async function () {
             const sellId = `SELL-${Date.now()}`;
