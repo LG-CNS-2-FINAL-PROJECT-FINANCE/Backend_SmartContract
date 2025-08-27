@@ -1,9 +1,26 @@
-const requestId = args[0];
+const investmentsData = args;
+
+const investmentsList = investmentsData.map(dataString => {
+    const parts = dataString.split(',');
+    
+    return {
+        investId: parts[0],
+        investorAddress: parts[1],
+        tokenAmount: parseInt(parts[2])
+    };
+});
 
 const apiURL = "API_URL_PLACEHOLDER";
 
 const apiResponse = await Functions.makeHttpRequest({
-    url: `${apiURL}?id=${requestId}`
+    url: apiURL, 
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json'
+    },
+    data: {
+        investments: investmentsList 
+    }
 });
 
 if (apiResponse.error) {
