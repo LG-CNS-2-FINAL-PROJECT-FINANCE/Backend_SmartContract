@@ -48,7 +48,7 @@ async function signData() {
             smartContractAddress: responseData.domain.verifyingContract,
             sellId: "입력하시오",
             sellerAddress: responseData.message.owner,
-            tokenAmount: "입력하시오",
+            tokenAmount: responseData.message.value / (10 ** 18),
             deadline: responseData.message.deadline,
             v: v,
             r: r,
