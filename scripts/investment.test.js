@@ -1,22 +1,23 @@
+// test/FractionalInvestmentToken.test.js
 const { ethers } = require("hardhat");
 require("dotenv").config();
-const { GelatoRelay } = require("@gelatonetwork/relay-sdk");
 
 async function main() {
-  // Hardhat 네트워크를 리셋하여 깨끗한 상태에서 테스트 시작
   if (hre.network.name === "hardhat") {
-    await hre.network.provider.send("hardhat_reset");
+    console.warn("Running on Hardhat network. This script is intended for a live testnet.");
   }
 
   const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
-  const GELATO_API_KEY = process.env.GELATO_API_KEY;
+  const SUBSCRIPTION_ID = process.env.CHAINLINK_FUNCTIONS_SUBSCRIPTIONS;
+  const ROUTER_ADDRESS = process.env.SEPOLIA_FUNCTIONS_ROUTER;
+  const DON_ID = process.env.SEPOLIA_DON_ID;
 
-  if (!CONTRACT_ADDRESS || !GELATO_API_KEY) {
-    console.error("CONTRACT_ADDRESS and GELATO_API_KEY must be set in your .env file.");
+  if (!CONTRACT_ADDRESS || !SUBSCRIPTION_ID || !ROUTER_ADDRESS || !DON_ID) {
+    console.error("All required environment variables must be set in your .env file.");
     process.exit(1);
   }
 
-  const [deployer] = await ethers.getSigners();
+  const [deployer, otherAccount1, otherAccount2 ] = await ethers.getSigners();
   const provider = ethers.provider;
 
   console.log("--- Account Info ---");
@@ -32,75 +33,88 @@ async function main() {
   const name = await token.name();
   const symbol = await token.symbol();
   const totalSupply = await token.totalSupply();
-  const totalInvestmentAmount = await token.totalInvestmentAmount();
-  const minInvestmentAmount = await token.minInvestmentAmount();
-  const totalTokenAmount = await token.totalTokenAmount();
-  const contractOwner = await token.owner();
-  const contractTokenBalance = await token.balanceOf(await token.getAddress());
+  const decimals = await token.decimals();
 
   console.log("Token Name:", name);
   console.log("Token Symbol:", symbol);
-  console.log("Total Supply:", ethers.formatUnits(totalSupply, await token.decimals()));
-  console.log("Total Investment Amount (원):", totalInvestmentAmount.toString());
-  console.log("Min Investment Amount (원):", minInvestmentAmount.toString());
-  console.log("Calculated Total Token Amount (개수):", totalTokenAmount.toString());
-  console.log("Contract Owner Address:", contractOwner);
-  console.log("Contract's Token Balance:", ethers.formatUnits(contractTokenBalance, await token.decimals()));
+  console.log("Total Supply:", ethers.formatUnits(totalSupply, decimals));
 
-  // --- 1. 1차 발행 (Initial Investment) 테스트 ---
-  console.log("\n--- Testing Initial Investment Request ---");
+console.log("\n--- Testing Multiple Investment Requests ---");
 
-  const investmentId = ethers.encodeBytes32String("invest_" + Math.floor(Math.random() * 1000000).toString());
-  const investmentBuyer = deployer.address;
-  const investmentTokens = 20n;
-  const decimals = await token.decimals();
-
-  const currentContractTokenBalance = await token.balanceOf(await token.getAddress());
-  const amountWithDecimals = investmentTokens * (10n ** decimals);
-
-  console.log(`Current Contract Token Balance: ${ethers.formatUnits(currentContractTokenBalance, decimals)}`);
-  console.log(`Requested Amount: ${ethers.formatUnits(amountWithDecimals, decimals)}`);
-
-  if (currentContractTokenBalance < amountWithDecimals) {   
-      console.error("\nERROR: Contract does not have enough tokens for this request. Please check the contract's balance.");
-      return;
-  }
-
-  console.log(`Requesting initial investment for ${investmentBuyer} with ${investmentTokens} tokens...`);
-  console.log(`investmentId: ${ethers.hexlify(investmentId)}`);
-
-  try {
-    const requestInitialTx = await token.connect(deployer).requestInvestment(
-      investmentId,
-      investmentBuyer,
-      investmentTokens
-    );
-    const receiptInitial = await requestInitialTx.wait();
-    console.log("Initial Investment Request Tx Confirmed in block:", receiptInitial.blockNumber);
-
-    const eventInitial = receiptInitial.logs.find(log => token.interface.parseLog(log)?.name === 'InvestmentRequested');
-    if (eventInitial) {
-      console.log("InvestmentRequested Event Fired!");
-      console.log("   Chainlink Request ID:", eventInitial.args.chainlinkRequestId);
-      console.log("   Buyer:", eventInitial.args.buyer);
-      console.log("   Token Amount:", ethers.formatUnits(eventInitial.args.tokenAmount, decimals));
-    } else {
-      console.log("InvestmentRequested event not found.");
+const investments = [
+    {
+      investId: `INV-1-${Date.now()}`,
+      investmentor: deployer.address,
+      tokenAmount: 20n,
+      processState: false
+    },
+    {
+      investId: `INV-2-${Date.now()}`,
+      investmentor: otherAccount1.address,
+      tokenAmount: 30n,
+      processState: false
+    },
+    {
+      investId: `INV-3-${Date.now()}`,
+      investmentor: otherAccount2.address,
+      tokenAmount: 50n,
+      processState: false
     }
+];
+
+let totalRequestedAmount = 0n;
+for (const inv of investments) {
+  totalRequestedAmount += inv.tokenAmount;
+}
+const amountWithDecimals = totalRequestedAmount * (10n ** decimals);
+
+const currentContractTokenBalance = await token.balanceOf(await token.getAddress());
+
+if (currentContractTokenBalance < amountWithDecimals) {
+  console.error("\nERROR: Contract does not have enough tokens for this request. Please check the contract's balance.");
+  return;
+}
+
+try {
+  console.log("Sending multiple investment requests to the live Chainlink network...");
+
+  const requestInitialTx = await token.connect(deployer).requestInvestment(investments);
+  const receiptInitial = await requestInitialTx.wait();
+  console.log("Multiple Investment Request Tx Confirmed in block:", receiptInitial.blockNumber);
+
+  const eventInitial = receiptInitial.logs.find(log => token.interface.parseLog(log)?.name === 'InvestmentRequested');
+  if (eventInitial) {
+    const reqId = eventInitial.args.chainlinkRequestId;
+    console.log("   InvestmentRequested Event Fired!");
+    console.log(`   Chainlink Request ID: ${reqId}`);
+    console.log("Waiting for Chainlink to process the request (approx. 60 seconds)...");
+
+    // 실제 Chainlink 콜백을 기다림
+    await new Promise(resolve => setTimeout(resolve, 60000));
     
-    console.log("Waiting for 30 seconds for initial investment fulfillment (simulate Chainlink callback)...");
-    await new Promise(resolve => setTimeout(resolve, 30000));
+    console.log("\n--- After Chainlink Callback ---");
 
-    const deployerBalanceAfterInitial = await token.balanceOf(deployer.address);
-    console.log(`\n--- After Initial Investment Fulfillment (Manual Check) ---`);
-    console.log(`deployer (${deployer.address})'s Token Balance:`, ethers.formatUnits(deployerBalanceAfterInitial, decimals));
-    console.log(`Contract's Token Balance:`, ethers.formatUnits(await token.balanceOf(await token.getAddress()), decimals));
+    for (const inv of investments) {
+      const balanceAfter = await token.balanceOf(inv.investmentor);
+      const isProcessed = (await token.investmentRecord(inv.investId)).processState;
+      
+      console.log(`\nAccount ${inv.investmentor.substring(0, 8)}...'s Token Balance:`, ethers.formatUnits(balanceAfter, decimals));
+      console.log(`Investment ID "${inv.investId}" Process State:`, isProcessed);
 
-  } catch (error) {
-    console.error("\n--- Error during Initial Investment Request ---");
-    console.error("Error Message:", error);
-    return;
+      if (isProcessed) {
+        console.log("Test Passed for investment:", inv.investId);
+      } else {
+        console.error("Test Failed for investment:", inv.investId);
+      }
+    }
+
+  } else {
+    console.error("InvestmentRequested event not found.");
   }
+} catch (error) {
+  console.error("\n--- Error during Multiple Investment Request ---");
+  console.error("Error Message:", error);
+}
 }
 
 main().catch((error) => {
