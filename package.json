@@ -1,6 +1,6 @@
 {
   "name": "backend-smart-contract",
-  "version" : "0.0.1",
+  "version" : "0.1.0",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^6.1.0",
     "hardhat": "^2.26.1",
