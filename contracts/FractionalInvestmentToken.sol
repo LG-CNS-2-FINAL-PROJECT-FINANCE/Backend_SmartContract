@@ -288,7 +288,40 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         sellRecord[_sellId].sellAmount = _sellAmount;
         sellRecord[_sellId].depositState = true;
     }
-    
+
+    function cancelDeposit(
+        string memory _sellId, 
+        address _seller,
+        uint256 _sellAmount,
+        bytes32 _hashedMessage,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) public onlyOwner whenNotPaused {
+        // 1. 서명자 주소를 복구
+        bytes32 prefixedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _hashedMessage));
+        address signer = ecrecover(prefixedHash, v, r, s);
+        
+        // 2. 서명자 일치 확인 (서명 검증)
+        require(signer != address(0), "Invalid signature.");
+        require(signer == _seller, "Signer is not the provided seller address.");
+
+        // 3. 기록 일치 여부 확인
+        require(sellRecord[_sellId].depositState, "No active deposit for this ID.");
+        require(sellRecord[_sellId].seller == _seller, "Seller is not matched for this deposit.");
+        require(sellRecord[_sellId].sellAmount == _sellAmount, "Sell Amount is not matched for this deposit.");
+
+        // 4. 토큰 예치 취소 가능 여부 확인 
+        uint256 tradeAmountWei = _sellAmount * (10 ** decimals());
+        require(balanceOf(address(this)) >= tradeAmountWei, "Smart Contract's token balance is insufficient.");
+
+        // 5. 토큰 예치 취소 진행
+        _transfer(address(this), _seller, tradeAmountWei);
+        
+        // 6. 토큰 예치 취소에 따른 기록 제거
+        delete sellRecord[_sellId];
+    }
+
     function requestTrade(
         string memory _tradeId,
         string memory _sellId,
