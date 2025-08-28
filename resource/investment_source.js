@@ -1,17 +1,3 @@
-function abiEncodeArray(uint256Array) {
-    // ABI 인코딩 규칙에 따라 배열의 길이를 먼저 인코딩
-    const length = uint256Array.length;
-    const encodedLength = Functions.encodeUint256(length);
-
-    // 각 요소를 인코딩하여 결합
-    let encodedPayload = encodedLength;
-    for (let i = 0; i < length; i++) {
-        encodedPayload += Functions.encodeUint256(uint256Array[i]);
-    }
-
-    return encodedPayload;
-}
-
 const investmentsData = args;
 
 const investmentsList = investmentsData.map(dataString => {
@@ -49,4 +35,13 @@ const booleanResults = data.data.result;
 
 const uint256Results = booleanResults.map(b => b ? 1 : 0);
 
-return abiEncodeArray(uint256Results);
+// npm 레지스트리에서 ethers 라이브러리를 가져옵니다.
+const { ethers } = await import("npm:ethers@6.15.0");
+const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+
+// abiCoder.encode의 결과물을 Uint8Array로 변환하여 반환
+const encodedResult = abiCoder.encode(["uint256[]"], [uint256Results]);
+
+// ethers.utils.arrayify는 ethers v5에서 사용
+// ethers v6에서는 ethers.getBytes()를 사용합니다.
+return ethers.getBytes(encodedResult);
