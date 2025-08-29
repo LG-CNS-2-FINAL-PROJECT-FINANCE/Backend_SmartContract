@@ -31,13 +31,15 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     string private s_investmentSourceCode;
     string private s_tradeSourceCode;
     uint32 private constant GAS_LIMIT = 300000;
+    
+    enum Status { None, Pending, Succeeded }
 
     // --- 1차 발행 관련 상태 변수 (key = investmentId) ---
     struct investment {
         string investId;
         address investmentor;
         uint256 tokenAmount;
-        bool processState;
+        Status processState;
     }
     mapping(string => investment) public investmentRecord;
     mapping(bytes32 => string[]) public investmentKey; // (chainlinkId -> investmentId)
@@ -47,7 +49,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     struct sell {
         address seller;
         uint256 depositAmount;
-        bool depositState;
+        Status depositState;
     }
     mapping(string => sell) public sellRecord;
 
@@ -63,7 +65,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         string sellId;
         string buyId;
         uint256 tradePricePerToken;
-        bool processState;
+        Status processState;
     }
     mapping(string => trade) public tradeRecord;
     mapping(bytes32 => string) public tradeKey; // (chainlinkId -> tradeId)
@@ -151,15 +153,19 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         string[] memory investmentIdList = new string[](_investments.length);
 
         for (uint i = 0; i < _investments.length; i++) {
-            require(!investmentRecord[_investments[i].investId].processState, "Initial request already processed or pending.");
+            require(investmentRecord[_investments[i].investId].processState == Status.None, "Initial request already processed or pending.");
             require(_investments[i].investmentor != address(0), "Buyer address cannot be zero.");
             require(_investments[i].tokenAmount > 0, "Token amount must be greater than 0.");
             require(balanceOf(address(this)) >= _investments[i].tokenAmount * (10 ** decimals()), "Not enough tokens in contract for this initial request.");
         }
 
         for (uint i = 0; i < _investments.length; i++) {
-            investmentRecord[_investments[i].investId].investmentor = _investments[i].investmentor;
-            investmentRecord[_investments[i].investId].tokenAmount = _investments[i].tokenAmount;
+            investmentRecord[_investments[i].investId] = investment({
+                investId: _investments[i].investId,
+                investmentor: _investments[i].investmentor,
+                tokenAmount: _investments[i].tokenAmount,
+                processState: Status.Pending
+            });
 
             string memory investorData = string(abi.encodePacked(
                 _investments[i].investId, ",",
@@ -228,12 +234,13 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         uint256 _result,
         bytes memory _err
     ) private {
-        if (investmentRecord[_investmentId].processState) {
-            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, REPEAT_FAILED, "Request already processed.");
+        if (investmentRecord[_investmentId].processState != Status.Pending) {
+            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, REPEAT_FAILED, "Request Status is not Pending.");
             return;
         }
 
         if (_err.length > 0) {
+            investmentRecord[_investmentId].processState = Status.None;
             emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, CHAINLINK_FAILED, "Chainlink Functions request failed.");
             return;
         }
@@ -245,15 +252,17 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
             if (balanceOf(address(this)) >= amount * (10 ** decimals())) {         
                 _transfer(address(this), buyer, amount * (10 ** decimals()));
 
-                investmentRecord[_investmentId].processState = true;
+                investmentRecord[_investmentId].processState = Status.Succeeded;
 
                 emit InvestmentSuccessful(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, buyer, amount, "Initial payment verified");
             } else {
                 // 심각한 에러 발생 : 내부 로직 오류
+                investmentRecord[_investmentId].processState = Status.None;
                 emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, SMART_CONTRACT_FAILED, "Insufficient contract token supply for initial transfer.");
                 pause();
             }
         } else {
+            investmentRecord[_investmentId].processState = Status.None;
             emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, EXTERNAL_API_FAILED, "Initial payment verification failed.");
         }
     }
@@ -270,7 +279,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         bytes32 s
     ) public onlyOwner whenNotPaused {
         // 1. 유효성 검사
-        require(!sellRecord[_sellId].depositState, "Trade Deposit request already processed or pending.");
+        require(sellRecord[_sellId].depositState == Status.None, "Trade Deposit request already processed or pending.");
         require(_seller != address(0), "Addresses cannot be zero.");
         require(_depositAmount > 0, "Tokens to transfer must be greater than 0.");
         
@@ -287,7 +296,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         // 5. 거래 정보 저장
         sellRecord[_sellId].seller = _seller;
         sellRecord[_sellId].depositAmount = _depositAmount;
-        sellRecord[_sellId].depositState = true;
+        sellRecord[_sellId].depositState = Status.Succeeded;
     }
 
     function cancelDeposit(
@@ -308,7 +317,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         require(signer == _seller, "Signer is not the provided seller address.");
 
         // 3. 기록 일치 여부 확인
-        require(sellRecord[_sellId].depositState, "No active deposit for this ID.");
+        require(sellRecord[_sellId].depositState == Status.Succeeded, "No active deposit for this ID.");
         require(sellRecord[_sellId].seller == _seller, "Seller is not matched for this deposit.");
         require(sellRecord[_sellId].depositAmount >= _cancelAmount, "Sell Amount is not matched for this deposit.");
 
@@ -336,8 +345,8 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         uint256 _tradePricePerToken
     ) public onlyOwner whenNotPaused {
         // 1. 유효성 검사
-        require(!tradeRecord[_tradeId].processState, "Trade request already processed or pending.");
-        require(sellRecord[_sellId].depositState, "Trade Deposit request is not processed or pending.");
+        require(tradeRecord[_tradeId].processState == Status.None, "Trade request already processed or pending.");
+        require(sellRecord[_sellId].depositState == Status.Succeeded, "Trade Deposit request is not processed or pending.");
 
         require(_buyer != address(0) && _seller != address(0), "Addresses cannot be zero.");
         require(_seller == sellRecord[_sellId].seller, "Seller does not match transaction history");
@@ -354,7 +363,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         tradeRecord[_tradeId].sellId = _sellId;
         tradeRecord[_tradeId].buyId = _buyId;
         tradeRecord[_tradeId].tradePricePerToken = _tradePricePerToken;
-        tradeRecord[_tradeId].processState = false;
+        tradeRecord[_tradeId].processState = Status.Pending;
 
         // External API
         FunctionsRequest.Request memory req;
@@ -382,12 +391,13 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         uint256 _result,
         bytes memory _err
     ) private {
-        if (tradeRecord[_tradeId].processState) {
+        if (tradeRecord[_tradeId].processState != Status.Pending) {
             emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, REPEAT_FAILED, "Request already processed.");
             return;
         }
 
         if (_err.length > 0) {
+            tradeRecord[_tradeId].processState = Status.None;
             emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, CHAINLINK_FAILED, "Chainlink Functions request failed.");
             return;
         }
@@ -399,12 +409,14 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
 
         if (_result == 1) {
             if (balanceOf(address(this)) < tradeAmountWei) {
+                tradeRecord[_tradeId].processState = Status.None;
                 emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, SMART_CONTRACT_FAILED, "Insufficient contract token supply for transfer.");
                 pause();
                 return;
             }
 
             if (tradeSell.depositAmount < tradeAmount) {
+                tradeRecord[_tradeId].processState = Status.None;
                 emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, SMART_CONTRACT_FAILED, "Insufficient deposit token supply for transfer.");
                 pause();
                 return;
@@ -412,12 +424,13 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
             
             _transfer(address(this), tradeBuy.buyer, tradeAmountWei);
 
-            tradeRecord[_tradeId].processState = true;
+            tradeRecord[_tradeId].processState = Status.Succeeded;
 
             tradeSell.depositAmount -= tradeAmount;
 
             emit TradeSuccessful(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, tradeSell.seller, tradeBuy.buyer, tradeAmount, "Off-chain purchase verified");
         } else {
+            tradeRecord[_tradeId].processState = Status.None;
             emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, EXTERNAL_API_FAILED, "Off-chain purchase verification failed. Tokens returned to seller.");
         }
     }

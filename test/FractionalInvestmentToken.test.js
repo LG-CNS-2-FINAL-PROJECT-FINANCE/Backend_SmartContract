@@ -128,7 +128,7 @@ describe("FractionalInvestmentToken (Local Tests without Chainlink)", function (
                 investId: `INV-${Date.now()}-single`,
                 investmentor: otherAccount.address,
                 tokenAmount: 100,
-                processState: false
+                processState: 0n
             };
 
             const investments = [investmentData];
@@ -161,7 +161,7 @@ describe("FractionalInvestmentToken (Local Tests without Chainlink)", function (
                     investId: `INV-${Date.now()}-multi-${i}`,
                     investmentor: investorAddress.address,
                     tokenAmount: tokenAmount,
-                    processState: false
+                    processState: 0n
                 });
                 
                 totalTokenAmount += tokenAmount;
@@ -329,7 +329,7 @@ describe("FractionalInvestmentToken (Local Tests without Chainlink)", function (
 
             // 기록이 제거되었는지 확인
             const record = await token.sellRecord(sellId);
-            expect(record.depositState).to.be.false;
+            expect(record.depositState).to.be.equal(0n);
         });
 
         it("유효하지 않은 서명으로 예치 취소를 시도하면 실패해야 한다", async function() {
@@ -372,7 +372,7 @@ describe("FractionalInvestmentToken (Local Tests without Chainlink)", function (
 
             // 4. 상태가 변경되지 않았는지 확인
             const record = await token.sellRecord(sellId);
-            expect(record.depositState).to.be.true;
+            expect(record.depositState).to.be.equal(2n);
         });
     });
 });
