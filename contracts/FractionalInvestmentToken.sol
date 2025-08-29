@@ -291,7 +291,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         permit(_seller, address(this), depoistAmountWei, deadline, v, r, s);
 
         // 4. 토큰 예치 (실제 토큰 이동)
-        this.transferFrom(_seller, address(this), depoistAmountWei);
+        _transfer(_seller, address(this), depoistAmountWei);
 
         // 5. 거래 정보 저장
         sellRecord[_sellId].seller = _seller;
@@ -303,32 +303,28 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         string memory _sellId, 
         address _seller,
         uint256 _cancelAmount,
-        bytes32 _hashedMessage,
+        uint256 deadline,
         uint8 v,
         bytes32 r,
         bytes32 s
     ) public onlyOwner whenNotPaused {
-        // 1. 서명자 주소를 복구
-        bytes32 prefixedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _hashedMessage));
-        address signer = ecrecover(prefixedHash, v, r, s);
-        
-        // 2. 서명자 일치 확인 (서명 검증)
-        require(signer != address(0), "Invalid signature.");
-        require(signer == _seller, "Signer is not the provided seller address.");
-
-        // 3. 기록 일치 여부 확인
+        // 1. 기록 일치 여부 확인
         require(sellRecord[_sellId].depositState == Status.Succeeded, "No active deposit for this ID.");
         require(sellRecord[_sellId].seller == _seller, "Seller is not matched for this deposit.");
         require(sellRecord[_sellId].depositAmount >= _cancelAmount, "Sell Amount is not matched for this deposit.");
 
-        // 4. 토큰 예치 취소 가능 여부 확인 
+        
+        // 2. 토큰 예치 취소 가능 여부 확인 
         uint256 cancelAmountWei = _cancelAmount * (10 ** decimals());
         require(balanceOf(address(this)) >= cancelAmountWei, "Smart Contract's token balance is insufficient.");
 
-        // 5. 토큰 예치 취소 진행
+        // 3. 서명자 일치 확인 (서명 검증)
+        permit(_seller, address(this), cancelAmountWei, deadline, v, r, s);
+
+        // 4. 토큰 예치 취소 진행
         _transfer(address(this), _seller, cancelAmountWei);
         
-        // 6. 토큰 예치 취소에 따른 개수 감소
+        // 5. 토큰 예치 취소에 따른 개수 감소
         sellRecord[_sellId].depositAmount -= _cancelAmount;
         if (sellRecord[_sellId].depositAmount == 0) {
             delete sellRecord[_sellId];
