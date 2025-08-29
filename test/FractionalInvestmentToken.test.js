@@ -196,6 +196,7 @@ describe("FractionalInvestmentToken (Local Tests without Chainlink)", function (
             const decimals = await token.decimals();
             const amountWei = BigInt(tokenAmount) * (10n ** decimals);
             const deadline = Math.floor(Date.now() / 1000) + 3600;
+            const tradePricePerToken = 10; // 새로운 변수 추가
 
             await token.transferTokensFromContract(seller.address, amountWei);
 
@@ -209,7 +210,7 @@ describe("FractionalInvestmentToken (Local Tests without Chainlink)", function (
 
             await token.depositWithPermit(sellId, seller.address, tokenAmount, deadline, v, r, s);
             
-            const tx = await token.requestTrade(tradeId, sellId, seller.address, tokenAmount, buyId, buyer.address, tokenAmount);
+            const tx = await token.connect(deployer).requestTrade(tradeId, sellId, seller.address, buyId, buyer.address, tokenAmount, tradePricePerToken);
             const receipt = await tx.wait();
 
             const event = receipt.logs.find(log => log.fragment && log.fragment.name === "TradeRequested");
@@ -222,6 +223,41 @@ describe("FractionalInvestmentToken (Local Tests without Chainlink)", function (
                 .withArgs(projectId, tradeId, reqId, projectId, tradeId, otherAccount.address, deployer.address, tokenAmount, "Off-chain purchase verified");
 
             expect(await token.balanceOf(deployer.address)).to.equal(amountWei);
+        });
+
+        it("거래 토큰량이 판매 예치 토큰량을 초과하면 `requestTrade`가 실패해야 한다", async function () {
+            const sellId = `SELL-${Date.now()}`;
+            const seller = otherAccount;
+            
+            const buyId = `BUY-${Date.now()}`;
+            const buyer = deployer;
+
+            const tradeId = `TRADE-${Date.now()}`;
+            const depositAmount = 100; // 예치할 토큰 양
+            const tradeAmount = 101; // 거래할 토큰 양 (예치 양보다 1 더 많음)
+            const tradePricePerToken = 10;
+            const decimals = await token.decimals();
+            const amountWei = BigInt(depositAmount) * (10n ** decimals);
+            const deadline = Math.floor(Date.now() / 1000) + 3600;
+
+            // 테스트를 위해 판매자에게 토큰 지급
+            await token.transferTokensFromContract(seller.address, amountWei);
+
+            // Permit 서명 생성
+            const nonce = await token.nonces(seller.address);
+            const value = amountWei;
+            const domain = { name: await token.name(), version: "1", chainId: (await ethers.provider.getNetwork()).chainId, verifyingContract: await token.getAddress() };
+            const types = { Permit: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }, { name: "value", type: "uint256" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" }] };
+            const permitMessage = { owner: seller.address, spender: await token.getAddress(), value: value, nonce: nonce, deadline: deadline };
+            const signature = await otherAccount.signTypedData(domain, types, permitMessage);
+            const { v, r, s } = ethers.Signature.from(signature);
+
+            // 예치 함수 호출
+            await token.connect(deployer).depositWithPermit(sellId, seller.address, depositAmount, deadline, v, r, s);
+            
+            // 유효성 검사 (tradeAmount가 depositAmount를 초과)
+            await expect(token.connect(deployer).requestTrade(tradeId, sellId, seller.address, buyId, buyer.address, tradeAmount, tradePricePerToken))
+                .to.be.revertedWith("Deposit Amount must be bigger than Trade Amount.");
         });
     });
 
