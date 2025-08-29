@@ -60,8 +60,9 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
 
     // --- 2차 거래 체결 요청 (key = tradeId) ---
     struct trade {
-        sell sellRecord;
-        buy buyRecord;
+        string sellId;
+        string buyId;
+        uint256 tradePricePerToken;
         bool processState;
     }
     mapping(string => trade) public tradeRecord;
@@ -326,33 +327,30 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         string memory _tradeId,
         string memory _sellId,
         address _seller,
-        uint256 _sellAmount,
         string memory _buyId,
         address _buyer,
-        uint256 _buyAmount
+        uint256 _tradeAmount,
+        uint256 _tradePricePerToken
     ) public onlyOwner whenNotPaused {
         // 1. 유효성 검사
         require(!tradeRecord[_tradeId].processState, "Trade request already processed or pending.");
         require(sellRecord[_sellId].depositState, "Trade Deposit request is not processed or pending.");
 
         require(_buyer != address(0) && _seller != address(0), "Addresses cannot be zero.");
-        require(_sellAmount > 0 && _buyAmount > 0, "Token amount must be greater than 0.");
-        require(_buyAmount == _sellAmount, "Buy and Sell amounts must match for trade.");
-
         require(_seller == sellRecord[_sellId].seller, "Seller does not match transaction history");
-        require(_sellAmount == sellRecord[_sellId].sellAmount, "Sell amount does not match transaction history");
+        require(_tradeAmount <= sellRecord[_sellId].depositAmount, "Deposit Amount must be bigger than Trade Amount.");
+        require(balanceOf(address(this)) >= _tradeAmount * (10 ** decimals()), "Contract holding amount is insufficient than Trade Token Amount.");
 
         require(bytes(s_tradeSourceCode).length > 0,"Source code not set.");
 
-        require(balanceOf(address(this)) >= _sellAmount * (10 ** decimals()), "Contract holding amount is insufficient than Trade Token Amount.");
-
-        // 2. 구매 정보 저장
+        // 2. 구매 정보 업데이트
         buyRecord[_buyId].buyer = _buyer;
-        buyRecord[_buyId].buyAmount = _buyAmount;
+        buyRecord[_buyId].buyAmount = _tradeAmount;
 
         // 3. 거래 체결 정보 저장
-        tradeRecord[_tradeId].sellRecord = sellRecord[_sellId];
-        tradeRecord[_tradeId].buyRecord = buyRecord[_buyId];
+        tradeRecord[_tradeId].sellId = _sellId;
+        tradeRecord[_tradeId].buyId = _buyId;
+        tradeRecord[_tradeId].tradePricePerToken = _tradePricePerToken;
         tradeRecord[_tradeId].processState = false;
 
         // External API
@@ -372,7 +370,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         bytes32 chainlinkReqId = _sendRequest(req.encodeCBOR(), s_subscriptionId, GAS_LIMIT, s_donId);
         tradeKey[chainlinkReqId] = _tradeId;
 
-        emit TradeRequested(projectId, _tradeId, chainlinkReqId, projectId, _tradeId, _seller, _buyer, _sellAmount);
+        emit TradeRequested(projectId, _tradeId, chainlinkReqId, projectId, _tradeId, _seller, _buyer, _tradeAmount);
     }
 
     function _handleTradeFulfillment(
@@ -391,10 +389,10 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
             return;
         }
 
-        address seller = tradeRecord[_tradeId].sellRecord.seller;
-        address buyer = tradeRecord[_tradeId].buyRecord.buyer;
-        uint256 amount = tradeRecord[_tradeId].sellRecord.sellAmount;
-        uint256 tradeAmountWei = amount * (10 ** decimals());
+        sell storage tradeSell = sellRecord[tradeRecord[_tradeId].sellId];
+        buy memory tradeBuy = buyRecord[tradeRecord[_tradeId].buyId];
+        uint256 tradeAmount = tradeBuy.buyAmount;
+        uint256 tradeAmountWei = tradeAmount * (10 ** decimals());
 
         if (_result == 1) {
             if (balanceOf(address(this)) < tradeAmountWei) {
@@ -402,10 +400,20 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
                 pause();
                 return;
             }
+
+            if (tradeSell.depositAmount < tradeAmount) {
+                emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, SMART_CONTRACT_FAILED, "Insufficient deposit token supply for transfer.");
+                pause();
+                return;
+            }
             
-            _transfer(address(this), buyer, tradeAmountWei);
+            _transfer(address(this), tradeBuy.buyer, tradeAmountWei);
+
             tradeRecord[_tradeId].processState = true;
-            emit TradeSuccessful(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, seller, buyer, amount, "Off-chain purchase verified");
+
+            tradeSell.depositAmount -= tradeAmount;
+
+            emit TradeSuccessful(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, tradeSell.seller, tradeBuy.buyer, tradeAmount, "Off-chain purchase verified");
         } else {
             if (balanceOf(address(this)) < tradeAmountWei) {
                 emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, SMART_CONTRACT_FAILED, "Insufficient contract token supply for refund. Check previous transactions.");
@@ -413,8 +421,10 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
                 return;
             }
             
-            _transfer(address(this), seller, tradeAmountWei);
-            tradeRecord[_tradeId].sellRecord.depositState = false;
+            _transfer(address(this), tradeSell.seller, tradeAmountWei);
+
+            tradeSell.depositState = false;
+            
             emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, EXTERNAL_API_FAILED, "Off-chain purchase verification failed. Tokens returned to seller.");
         }
     }
