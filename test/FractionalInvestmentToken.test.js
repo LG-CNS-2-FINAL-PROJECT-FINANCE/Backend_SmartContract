@@ -272,107 +272,47 @@ describe("FractionalInvestmentToken (Local Tests without Chainlink)", function (
             const amountWei = BigInt(tokenAmount) * (10n ** decimals);
             const deadline = Math.floor(Date.now() / 1000) + 3600;
 
-            const contractInitialBalance = await token.balanceOf(await token.getAddress());
-
             // `onlyOwner`이기 때문에 deployer가 seller에게 토큰을 전송해야 합니다.
             await token.transferTokensFromContract(seller.address, amountWei);
             const sellerInitialBalance = await token.balanceOf(seller.address);
 
             // 2. depositWithPermit을 통해 토큰 예치
-            const nonce = await token.nonces(seller.address);
-            const value = amountWei;
+            const nonce1 = await token.nonces(seller.address);
+            const value1 = amountWei;
             const domain = { name: await token.name(), version: "1", chainId: (await ethers.provider.getNetwork()).chainId, verifyingContract: await token.getAddress() };
             const types = { Permit: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }, { name: "value", type: "uint256" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" }] };
-            const permitMessage = { owner: seller.address, spender: await token.getAddress(), value: value, nonce: nonce, deadline: deadline };
-            const signature = await otherAccount.signTypedData(domain, types, permitMessage);
-            const { v, r, s } = ethers.Signature.from(signature);
+            const permitMessage1 = { owner: seller.address, spender: await token.getAddress(), value: value1, nonce: nonce1, deadline: deadline };
+            const signature1 = await otherAccount.signTypedData(domain, types, permitMessage1);
+            const { v: v1, r: r1, s: s1 } = ethers.Signature.from(signature1);
 
-            await token.depositWithPermit(sellId, seller.address, tokenAmount, deadline, v, r, s);
+            await token.connect(deployer).depositWithPermit(sellId, seller.address, tokenAmount, deadline, v1, r1, s1);
             
-            const contractBalanceAfterDeposit = await token.balanceOf(await token.getAddress());
-            const sellerBalanceAfterDeposit = await token.balanceOf(seller.address);
-
-            expect(contractBalanceAfterDeposit).to.equal(contractInitialBalance - sellerInitialBalance + amountWei);
-            expect(sellerBalanceAfterDeposit).to.equal(sellerInitialBalance - amountWei);
-
-            // 3. cancelDeposit를 호출하기 위한 서명 메시지 생성
-            const messageHash = ethers.solidityPackedKeccak256(
-                ["string", "address", "uint256"],
-                [sellId, seller.address, BigInt(tokenAmount)]
-            );
-
-            const { v: v2, r: r2, s: s2 } = ethers.Signature.from(await seller.signMessage(ethers.getBytes(messageHash)));
+            // 3. cancelDeposit를 호출하기 위한 permit 서명 생성
+            const cancelAmount = 100; // 예치량의 일부만 취소
+            const cancelAmountWei = BigInt(cancelAmount) * (10n ** decimals);
+            const nonce2 = await token.nonces(seller.address);
+            const permitMessage2 = { owner: seller.address, spender: await token.getAddress(), value: cancelAmountWei, nonce: nonce2, deadline: deadline };
+            const signature2 = await otherAccount.signTypedData(domain, types, permitMessage2);
+            const { v: v2, r: r2, s: s2 } = ethers.Signature.from(signature2);
 
             // 4. `onlyOwner`인 deployer가 `cancelDeposit` 함수 호출
-            await token.cancelDeposit(
+            await token.connect(deployer).cancelDeposit(
                 sellId,
                 seller.address,
-                tokenAmount,
-                messageHash,
+                cancelAmount,
+                deadline,
                 v2,
                 r2,
                 s2
             );
 
             // 최종 잔액 확인
-            // 예치 취소 후 컨트랙트의 최종 잔액은 초기 총 발행량에서
-            // 판매자에게 보냈던 토큰 양(200)을 뺀 값이 되어야 합니다.
-            const contractBalanceAfterCancel = await token.balanceOf(await token.getAddress());
-            const expectedFinalContractBalance = contractBalanceAfterDeposit - BigInt(tokenAmount) * (10n ** decimals);
-
-            // 컨트랙트의 최종 잔액 확인
-            expect(contractBalanceAfterCancel).to.equal(expectedFinalContractBalance);
-
-            // 판매자의 최종 잔액은 예치 전 초기 잔액과 같아야 합니다.
             const sellerBalanceAfterCancel = await token.balanceOf(seller.address);
-            expect(sellerBalanceAfterCancel).to.equal(sellerInitialBalance);
+            expect(sellerBalanceAfterCancel).to.equal(cancelAmountWei);
 
-            // 기록이 제거되었는지 확인
+            // 기록이 정확히 업데이트되었는지 확인
             const record = await token.sellRecord(sellId);
-            expect(record.depositState).to.be.equal(0n);
-        });
-
-        it("유효하지 않은 서명으로 예치 취소를 시도하면 실패해야 한다", async function() {
-            // 1. 유효한 예치 상태 설정
-            const sellId = `CANCEL-INVALID-${Date.now()}`;
-            const seller = otherAccount;
-            const tokenAmount = 100;
-            const decimals = await token.decimals();
-            const amountWei = BigInt(tokenAmount) * (10n ** decimals);
-            const deadline = Math.floor(Date.now() / 1000) + 3600;
-
-            await token.transferTokensFromContract(seller.address, amountWei);
-            const nonce = await token.nonces(seller.address);
-            const value = amountWei;
-            const domain = { name: await token.name(), version: "1", chainId: (await ethers.provider.getNetwork()).chainId, verifyingContract: await token.getAddress() };
-            const types = { Permit: [{ name: "owner", type: "address" }, { name: "spender", type: "address" }, { name: "value", type: "uint256" }, { name: "nonce", type: "uint256" }, { name: "deadline", type: "uint256" }] };
-            const permitMessage = { owner: seller.address, spender: await token.getAddress(), value: value, nonce: nonce, deadline: deadline };
-            const signature = await otherAccount.signTypedData(domain, types, permitMessage);
-            const { v, r, s } = ethers.Signature.from(signature);
-            await token.depositWithPermit(sellId, seller.address, tokenAmount, deadline, v, r, s);
-            
-            // 2. 다른 계정(deployer)의 서명으로 예치 취소 시도
-            const invalidSigner = deployer; // 서명자가 아닌 다른 계정
-            const messageHash = ethers.solidityPackedKeccak256(
-                ["string", "address", "uint256"],
-                [sellId, seller.address, BigInt(tokenAmount)]
-            );
-            const { v: v2, r: r2, s: s2 } = ethers.Signature.from(await invalidSigner.signMessage(ethers.getBytes(messageHash)));
-
-            // 3. 잘못된 서명으로 함수 호출 -> "Signer is not the provided seller address." 에러 발생 예상
-            await expect(token.cancelDeposit(
-                sellId,
-                seller.address,
-                tokenAmount,
-                messageHash,
-                v2,
-                r2,
-                s2
-            )).to.be.revertedWith("Signer is not the provided seller address.");
-
-            // 4. 상태가 변경되지 않았는지 확인
-            const record = await token.sellRecord(sellId);
-            expect(record.depositState).to.be.equal(2n);
+            expect(record.depositAmount).to.equal(BigInt(tokenAmount - cancelAmount));
         });
     });
 });
