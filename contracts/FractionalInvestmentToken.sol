@@ -31,13 +31,15 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     string private s_investmentSourceCode;
     string private s_tradeSourceCode;
     uint32 private constant GAS_LIMIT = 300000;
+    
+    enum Status { None, Pending, Succeeded }
 
     // --- 1차 발행 관련 상태 변수 (key = investmentId) ---
     struct investment {
         string investId;
         address investmentor;
         uint256 tokenAmount;
-        bool processState;
+        Status processState;
     }
     mapping(string => investment) public investmentRecord;
     mapping(bytes32 => string[]) public investmentKey; // (chainlinkId -> investmentId)
@@ -46,8 +48,8 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     // --- 2차 거래 판매 요청 (key = sellId) ---
     struct sell {
         address seller;
-        uint256 sellAmount;
-        bool depositState;
+        uint256 depositAmount;
+        Status depositState;
     }
     mapping(string => sell) public sellRecord;
 
@@ -60,9 +62,10 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
 
     // --- 2차 거래 체결 요청 (key = tradeId) ---
     struct trade {
-        sell sellRecord;
-        buy buyRecord;
-        bool processState;
+        string sellId;
+        string buyId;
+        uint256 tradePricePerToken;
+        Status processState;
     }
     mapping(string => trade) public tradeRecord;
     mapping(bytes32 => string) public tradeKey; // (chainlinkId -> tradeId)
@@ -70,7 +73,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     // --- 토큰 전송이 불가 기간 ---
     mapping(address => uint256) private lockupUntil;
 
-    event InvestmentRequested(bytes32 indexed projectIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, investment[] investmentList);
+    event InvestmentRequested(bytes32 indexed projectIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string[] investmentIdList);
     event InvestmentSuccessful(bytes32 indexed projectIndex, string indexed investmentIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string investmentId, address buyer, uint256 tokenAmount, string chainlinkResult);
     event InvestmentFailed(bytes32 indexed projectIndex, string indexed investmentIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string investmentId, uint256 status, string reason);
 
@@ -150,15 +153,19 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         string[] memory investmentIdList = new string[](_investments.length);
 
         for (uint i = 0; i < _investments.length; i++) {
-            require(!investmentRecord[_investments[i].investId].processState, "Initial request already processed or pending.");
+            require(investmentRecord[_investments[i].investId].processState == Status.None, "Initial request already processed or pending.");
             require(_investments[i].investmentor != address(0), "Buyer address cannot be zero.");
             require(_investments[i].tokenAmount > 0, "Token amount must be greater than 0.");
             require(balanceOf(address(this)) >= _investments[i].tokenAmount * (10 ** decimals()), "Not enough tokens in contract for this initial request.");
         }
 
         for (uint i = 0; i < _investments.length; i++) {
-            investmentRecord[_investments[i].investId].investmentor = _investments[i].investmentor;
-            investmentRecord[_investments[i].investId].tokenAmount = _investments[i].tokenAmount;
+            investmentRecord[_investments[i].investId] = investment({
+                investId: _investments[i].investId,
+                investmentor: _investments[i].investmentor,
+                tokenAmount: _investments[i].tokenAmount,
+                processState: Status.Pending
+            });
 
             string memory investorData = string(abi.encodePacked(
                 _investments[i].investId, ",",
@@ -185,7 +192,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         bytes32 chainlinkReqId = _sendRequest(req.encodeCBOR(), s_subscriptionId, GAS_LIMIT, s_donId);
         investmentKey[chainlinkReqId] = investmentIdList;
 
-        emit InvestmentRequested(projectId, chainlinkReqId, projectId, _investments);
+        emit InvestmentRequested(projectId, chainlinkReqId, projectId, investmentIdList);
     }
 
     function fulfillRequest(
@@ -227,12 +234,13 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         uint256 _result,
         bytes memory _err
     ) private {
-        if (investmentRecord[_investmentId].processState) {
-            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, REPEAT_FAILED, "Request already processed.");
+        if (investmentRecord[_investmentId].processState != Status.Pending) {
+            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, REPEAT_FAILED, "Request Status is not Pending.");
             return;
         }
 
         if (_err.length > 0) {
+            investmentRecord[_investmentId].processState = Status.None;
             emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, CHAINLINK_FAILED, "Chainlink Functions request failed.");
             return;
         }
@@ -244,15 +252,17 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
             if (balanceOf(address(this)) >= amount * (10 ** decimals())) {         
                 _transfer(address(this), buyer, amount * (10 ** decimals()));
 
-                investmentRecord[_investmentId].processState = true;
+                investmentRecord[_investmentId].processState = Status.Succeeded;
 
                 emit InvestmentSuccessful(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, buyer, amount, "Initial payment verified");
             } else {
                 // 심각한 에러 발생 : 내부 로직 오류
+                investmentRecord[_investmentId].processState = Status.None;
                 emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, SMART_CONTRACT_FAILED, "Insufficient contract token supply for initial transfer.");
                 pause();
             }
         } else {
+            investmentRecord[_investmentId].processState = Status.None;
             emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, EXTERNAL_API_FAILED, "Initial payment verification failed.");
         }
     }
@@ -262,98 +272,94 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     function depositWithPermit(
         string memory _sellId, 
         address _seller,
-        uint256 _sellAmount,
+        uint256 _depositAmount,
         uint256 deadline,
         uint8 v,
         bytes32 r,
         bytes32 s
     ) public onlyOwner whenNotPaused {
         // 1. 유효성 검사
-        require(!sellRecord[_sellId].depositState, "Trade Deposit request already processed or pending.");
+        require(sellRecord[_sellId].depositState == Status.None, "Trade Deposit request already processed or pending.");
         require(_seller != address(0), "Addresses cannot be zero.");
-        require(_sellAmount > 0, "Tokens to transfer must be greater than 0.");
+        require(_depositAmount > 0, "Tokens to transfer must be greater than 0.");
         
         // 2. 판매자 토큰 잔액 확인
-        uint256 tradeAmountWei = _sellAmount * (10 ** decimals());
-        require(balanceOf(_seller) >= tradeAmountWei, "Seller's token balance is insufficient.");
+        uint256 depoistAmountWei = _depositAmount * (10 ** decimals());
+        require(balanceOf(_seller) >= depoistAmountWei, "Seller's token balance is insufficient.");
 
         // 3. 서명을 통해 컨트랙트에 토큰 사용 권한 부여
-        permit(_seller, address(this), tradeAmountWei, deadline, v, r, s);
+        permit(_seller, address(this), depoistAmountWei, deadline, v, r, s);
 
         // 4. 토큰 예치 (실제 토큰 이동)
-        _transfer(_seller, address(this), tradeAmountWei);
+        _transfer(_seller, address(this), depoistAmountWei);
 
         // 5. 거래 정보 저장
         sellRecord[_sellId].seller = _seller;
-        sellRecord[_sellId].sellAmount = _sellAmount;
-        sellRecord[_sellId].depositState = true;
+        sellRecord[_sellId].depositAmount = _depositAmount;
+        sellRecord[_sellId].depositState = Status.Succeeded;
     }
 
     function cancelDeposit(
         string memory _sellId, 
         address _seller,
-        uint256 _sellAmount,
-        bytes32 _hashedMessage,
+        uint256 _cancelAmount,
+        uint256 deadline,
         uint8 v,
         bytes32 r,
         bytes32 s
     ) public onlyOwner whenNotPaused {
-        // 1. 서명자 주소를 복구
-        bytes32 prefixedHash = keccak256(abi.encodePacked("\x19Ethereum Signed Message:\n32", _hashedMessage));
-        address signer = ecrecover(prefixedHash, v, r, s);
-        
-        // 2. 서명자 일치 확인 (서명 검증)
-        require(signer != address(0), "Invalid signature.");
-        require(signer == _seller, "Signer is not the provided seller address.");
-
-        // 3. 기록 일치 여부 확인
-        require(sellRecord[_sellId].depositState, "No active deposit for this ID.");
+        // 1. 기록 일치 여부 확인
+        require(sellRecord[_sellId].depositState == Status.Succeeded, "No active deposit for this ID.");
         require(sellRecord[_sellId].seller == _seller, "Seller is not matched for this deposit.");
-        require(sellRecord[_sellId].sellAmount == _sellAmount, "Sell Amount is not matched for this deposit.");
+        require(sellRecord[_sellId].depositAmount >= _cancelAmount, "Sell Amount is not matched for this deposit.");
 
-        // 4. 토큰 예치 취소 가능 여부 확인 
-        uint256 tradeAmountWei = _sellAmount * (10 ** decimals());
-        require(balanceOf(address(this)) >= tradeAmountWei, "Smart Contract's token balance is insufficient.");
-
-        // 5. 토큰 예치 취소 진행
-        _transfer(address(this), _seller, tradeAmountWei);
         
-        // 6. 토큰 예치 취소에 따른 기록 제거
-        delete sellRecord[_sellId];
+        // 2. 토큰 예치 취소 가능 여부 확인 
+        uint256 cancelAmountWei = _cancelAmount * (10 ** decimals());
+        require(balanceOf(address(this)) >= cancelAmountWei, "Smart Contract's token balance is insufficient.");
+
+        // 3. 서명자 일치 확인 (서명 검증)
+        permit(_seller, address(this), cancelAmountWei, deadline, v, r, s);
+
+        // 4. 토큰 예치 취소 진행
+        _transfer(address(this), _seller, cancelAmountWei);
+        
+        // 5. 토큰 예치 취소에 따른 개수 감소
+        sellRecord[_sellId].depositAmount -= _cancelAmount;
+        if (sellRecord[_sellId].depositAmount == 0) {
+            delete sellRecord[_sellId];
+        }
     }
 
     function requestTrade(
         string memory _tradeId,
         string memory _sellId,
         address _seller,
-        uint256 _sellAmount,
         string memory _buyId,
         address _buyer,
-        uint256 _buyAmount
+        uint256 _tradeAmount,
+        uint256 _tradePricePerToken
     ) public onlyOwner whenNotPaused {
         // 1. 유효성 검사
-        require(!tradeRecord[_tradeId].processState, "Trade request already processed or pending.");
-        require(sellRecord[_sellId].depositState, "Trade Deposit request is not processed or pending.");
+        require(tradeRecord[_tradeId].processState == Status.None, "Trade request already processed or pending.");
+        require(sellRecord[_sellId].depositState == Status.Succeeded, "Trade Deposit request is not processed or pending.");
 
         require(_buyer != address(0) && _seller != address(0), "Addresses cannot be zero.");
-        require(_sellAmount > 0 && _buyAmount > 0, "Token amount must be greater than 0.");
-        require(_buyAmount == _sellAmount, "Buy and Sell amounts must match for trade.");
-
         require(_seller == sellRecord[_sellId].seller, "Seller does not match transaction history");
-        require(_sellAmount == sellRecord[_sellId].sellAmount, "Sell amount does not match transaction history");
+        require(_tradeAmount <= sellRecord[_sellId].depositAmount, "Deposit Amount must be bigger than Trade Amount.");
+        require(balanceOf(address(this)) >= _tradeAmount * (10 ** decimals()), "Contract holding amount is insufficient than Trade Token Amount.");
 
         require(bytes(s_tradeSourceCode).length > 0,"Source code not set.");
 
-        require(balanceOf(address(this)) >= _sellAmount * (10 ** decimals()), "Contract holding amount is insufficient than Trade Token Amount.");
-
-        // 2. 구매 정보 저장
+        // 2. 구매 정보 업데이트
         buyRecord[_buyId].buyer = _buyer;
-        buyRecord[_buyId].buyAmount = _buyAmount;
+        buyRecord[_buyId].buyAmount = _tradeAmount;
 
         // 3. 거래 체결 정보 저장
-        tradeRecord[_tradeId].sellRecord = sellRecord[_sellId];
-        tradeRecord[_tradeId].buyRecord = buyRecord[_buyId];
-        tradeRecord[_tradeId].processState = false;
+        tradeRecord[_tradeId].sellId = _sellId;
+        tradeRecord[_tradeId].buyId = _buyId;
+        tradeRecord[_tradeId].tradePricePerToken = _tradePricePerToken;
+        tradeRecord[_tradeId].processState = Status.Pending;
 
         // External API
         FunctionsRequest.Request memory req;
@@ -372,7 +378,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         bytes32 chainlinkReqId = _sendRequest(req.encodeCBOR(), s_subscriptionId, GAS_LIMIT, s_donId);
         tradeKey[chainlinkReqId] = _tradeId;
 
-        emit TradeRequested(projectId, _tradeId, chainlinkReqId, projectId, _tradeId, _seller, _buyer, _sellAmount);
+        emit TradeRequested(projectId, _tradeId, chainlinkReqId, projectId, _tradeId, _seller, _buyer, _tradeAmount);
     }
 
     function _handleTradeFulfillment(
@@ -381,40 +387,46 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         uint256 _result,
         bytes memory _err
     ) private {
-        if (tradeRecord[_tradeId].processState) {
+        if (tradeRecord[_tradeId].processState != Status.Pending) {
             emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, REPEAT_FAILED, "Request already processed.");
             return;
         }
 
         if (_err.length > 0) {
+            tradeRecord[_tradeId].processState = Status.None;
             emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, CHAINLINK_FAILED, "Chainlink Functions request failed.");
             return;
         }
 
-        address seller = tradeRecord[_tradeId].sellRecord.seller;
-        address buyer = tradeRecord[_tradeId].buyRecord.buyer;
-        uint256 amount = tradeRecord[_tradeId].sellRecord.sellAmount;
-        uint256 tradeAmountWei = amount * (10 ** decimals());
+        sell storage tradeSell = sellRecord[tradeRecord[_tradeId].sellId];
+        buy memory tradeBuy = buyRecord[tradeRecord[_tradeId].buyId];
+        uint256 tradeAmount = tradeBuy.buyAmount;
+        uint256 tradeAmountWei = tradeAmount * (10 ** decimals());
 
         if (_result == 1) {
             if (balanceOf(address(this)) < tradeAmountWei) {
+                tradeRecord[_tradeId].processState = Status.None;
                 emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, SMART_CONTRACT_FAILED, "Insufficient contract token supply for transfer.");
                 pause();
                 return;
             }
-            
-            _transfer(address(this), buyer, tradeAmountWei);
-            tradeRecord[_tradeId].processState = true;
-            emit TradeSuccessful(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, seller, buyer, amount, "Off-chain purchase verified");
-        } else {
-            if (balanceOf(address(this)) < tradeAmountWei) {
-                emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, SMART_CONTRACT_FAILED, "Insufficient contract token supply for refund. Check previous transactions.");
+
+            if (tradeSell.depositAmount < tradeAmount) {
+                tradeRecord[_tradeId].processState = Status.None;
+                emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, SMART_CONTRACT_FAILED, "Insufficient deposit token supply for transfer.");
                 pause();
                 return;
             }
             
-            _transfer(address(this), seller, tradeAmountWei);
-            tradeRecord[_tradeId].sellRecord.depositState = false;
+            _transfer(address(this), tradeBuy.buyer, tradeAmountWei);
+
+            tradeRecord[_tradeId].processState = Status.Succeeded;
+
+            tradeSell.depositAmount -= tradeAmount;
+
+            emit TradeSuccessful(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, tradeSell.seller, tradeBuy.buyer, tradeAmount, "Off-chain purchase verified");
+        } else {
+            tradeRecord[_tradeId].processState = Status.None;
             emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, EXTERNAL_API_FAILED, "Off-chain purchase verification failed. Tokens returned to seller.");
         }
     }

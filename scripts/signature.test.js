@@ -81,39 +81,4 @@ async function signData() {
     }
 }
 
-async function signCancelDeposit(sellId, sellerAddress, amount) {
-    try {
-        // 1. 필요한 데이터를 조합하여 해시 메시지 생성
-        // 이 로직은 스마트 컨트랙트의 keccak256(abi.encodePacked(...))와 정확히 일치해야 합니다.
-        const hashedMessage = ethers.solidityPackedKeccak256(
-            ["string", "address", "uint256"],
-            [sellId, sellerAddress, amount]
-        );
-
-        // 3. 해시 메시지를 서명
-        // signMessage는 자동으로 이더리움 표준 접두사를 추가합니다.
-        const signature = await wallet.signMessage(ethers.getBytes(hashedMessage));
-
-        // 4. 서명에서 r, v, s 값 추출
-        const { r, s, v } = ethers.Signature.from(signature);
-
-        const outputLog = {
-            hashedMessage: hashedMessage,
-            signature: signature,
-            r: r,
-            s: s,
-            v: v
-        };
-
-        console.log(JSON.stringify(outputLog, null, 4));
-
-    } catch (error) {
-        console.error("서명 중 오류 발생:", error);
-        throw error;
-    }
-}
-
-
 signData();
-
-signCancelDeposit("23634", "0xBEe09296623Dee35Ae2570De33B6ba017bc2d4d9", 10);
