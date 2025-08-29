@@ -282,7 +282,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         permit(_seller, address(this), depoistAmountWei, deadline, v, r, s);
 
         // 4. 토큰 예치 (실제 토큰 이동)
-        _transfer(_seller, address(this), depoistAmountWei);
+        this.transferFrom(_seller, address(this), depoistAmountWei);
 
         // 5. 거래 정보 저장
         sellRecord[_sellId].seller = _seller;
