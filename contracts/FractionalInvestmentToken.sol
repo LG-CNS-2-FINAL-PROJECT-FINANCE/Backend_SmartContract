@@ -418,16 +418,6 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
 
             emit TradeSuccessful(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, tradeSell.seller, tradeBuy.buyer, tradeAmount, "Off-chain purchase verified");
         } else {
-            if (balanceOf(address(this)) < tradeAmountWei) {
-                emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, SMART_CONTRACT_FAILED, "Insufficient contract token supply for refund. Check previous transactions.");
-                pause();
-                return;
-            }
-            
-            _transfer(address(this), tradeSell.seller, tradeAmountWei);
-
-            tradeSell.depositState = false;
-            
             emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, EXTERNAL_API_FAILED, "Off-chain purchase verification failed. Tokens returned to seller.");
         }
     }
