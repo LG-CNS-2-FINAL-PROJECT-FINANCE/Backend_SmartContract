@@ -293,7 +293,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     function cancelDeposit(
         string memory _sellId, 
         address _seller,
-        uint256 _depositAmount,
+        uint256 _cancelAmount,
         bytes32 _hashedMessage,
         uint8 v,
         bytes32 r,
@@ -310,17 +310,20 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         // 3. 기록 일치 여부 확인
         require(sellRecord[_sellId].depositState, "No active deposit for this ID.");
         require(sellRecord[_sellId].seller == _seller, "Seller is not matched for this deposit.");
-        require(sellRecord[_sellId].depositAmount == _depositAmount, "Sell Amount is not matched for this deposit.");
+        require(sellRecord[_sellId].depositAmount >= _cancelAmount, "Sell Amount is not matched for this deposit.");
 
         // 4. 토큰 예치 취소 가능 여부 확인 
-        uint256 depositAmountWei = _depositAmount * (10 ** decimals());
-        require(balanceOf(address(this)) >= depositAmountWei, "Smart Contract's token balance is insufficient.");
+        uint256 cancelAmountWei = _cancelAmount * (10 ** decimals());
+        require(balanceOf(address(this)) >= cancelAmountWei, "Smart Contract's token balance is insufficient.");
 
         // 5. 토큰 예치 취소 진행
-        _transfer(address(this), _seller, depositAmountWei);
+        _transfer(address(this), _seller, cancelAmountWei);
         
-        // 6. 토큰 예치 취소에 따른 기록 제거
-        delete sellRecord[_sellId];
+        // 6. 토큰 예치 취소에 따른 개수 감소
+        sellRecord[_sellId].depositAmount -= _cancelAmount;
+        if (sellRecord[_sellId].depositAmount == 0) {
+            delete sellRecord[_sellId];
+        }
     }
 
     function requestTrade(
