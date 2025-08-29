@@ -46,7 +46,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     // --- 2차 거래 판매 요청 (key = sellId) ---
     struct sell {
         address seller;
-        uint256 sellAmount;
+        uint256 depositAmount;
         bool depositState;
     }
     mapping(string => sell) public sellRecord;
@@ -262,7 +262,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
     function depositWithPermit(
         string memory _sellId, 
         address _seller,
-        uint256 _sellAmount,
+        uint256 _depositAmount,
         uint256 deadline,
         uint8 v,
         bytes32 r,
@@ -271,28 +271,28 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         // 1. 유효성 검사
         require(!sellRecord[_sellId].depositState, "Trade Deposit request already processed or pending.");
         require(_seller != address(0), "Addresses cannot be zero.");
-        require(_sellAmount > 0, "Tokens to transfer must be greater than 0.");
+        require(_depositAmount > 0, "Tokens to transfer must be greater than 0.");
         
         // 2. 판매자 토큰 잔액 확인
-        uint256 tradeAmountWei = _sellAmount * (10 ** decimals());
-        require(balanceOf(_seller) >= tradeAmountWei, "Seller's token balance is insufficient.");
+        uint256 depoistAmountWei = _depositAmount * (10 ** decimals());
+        require(balanceOf(_seller) >= depoistAmountWei, "Seller's token balance is insufficient.");
 
         // 3. 서명을 통해 컨트랙트에 토큰 사용 권한 부여
-        permit(_seller, address(this), tradeAmountWei, deadline, v, r, s);
+        permit(_seller, address(this), depoistAmountWei, deadline, v, r, s);
 
         // 4. 토큰 예치 (실제 토큰 이동)
-        _transfer(_seller, address(this), tradeAmountWei);
+        _transfer(_seller, address(this), depoistAmountWei);
 
         // 5. 거래 정보 저장
         sellRecord[_sellId].seller = _seller;
-        sellRecord[_sellId].sellAmount = _sellAmount;
+        sellRecord[_sellId].depositAmount = _depositAmount;
         sellRecord[_sellId].depositState = true;
     }
 
     function cancelDeposit(
         string memory _sellId, 
         address _seller,
-        uint256 _sellAmount,
+        uint256 _depositAmount,
         bytes32 _hashedMessage,
         uint8 v,
         bytes32 r,
@@ -309,14 +309,14 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         // 3. 기록 일치 여부 확인
         require(sellRecord[_sellId].depositState, "No active deposit for this ID.");
         require(sellRecord[_sellId].seller == _seller, "Seller is not matched for this deposit.");
-        require(sellRecord[_sellId].sellAmount == _sellAmount, "Sell Amount is not matched for this deposit.");
+        require(sellRecord[_sellId].depositAmount == _depositAmount, "Sell Amount is not matched for this deposit.");
 
         // 4. 토큰 예치 취소 가능 여부 확인 
-        uint256 tradeAmountWei = _sellAmount * (10 ** decimals());
-        require(balanceOf(address(this)) >= tradeAmountWei, "Smart Contract's token balance is insufficient.");
+        uint256 depositAmountWei = _depositAmount * (10 ** decimals());
+        require(balanceOf(address(this)) >= depositAmountWei, "Smart Contract's token balance is insufficient.");
 
         // 5. 토큰 예치 취소 진행
-        _transfer(address(this), _seller, tradeAmountWei);
+        _transfer(address(this), _seller, depositAmountWei);
         
         // 6. 토큰 예치 취소에 따른 기록 제거
         delete sellRecord[_sellId];
