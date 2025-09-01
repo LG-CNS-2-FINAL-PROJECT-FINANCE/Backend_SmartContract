@@ -1,9 +1,22 @@
 const tradeId = args[0];
+const buyId = args[1];
+const sellId = args[2];
+const tradeAmount = args[3];
 
 const apiURL = "API_URL_PLACEHOLDER";
 
 const apiResponse = await Functions.makeHttpRequest({
-    url: `${apiURL}?id=${tradeId}`
+    url: apiURL, 
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json'
+    },
+    data: {
+        tradeId : BigInt(tradeId) || 0,
+        buyId : BigInt(buyId) || 0,
+        sellId : BigInt(sellId) || 0,
+        tradeAmount : BigInt(tradeAmount) || 0
+    }
 });
 
 if (apiResponse.error) {

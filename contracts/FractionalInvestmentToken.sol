@@ -366,8 +366,11 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         req.initializeRequestForInlineJavaScript(s_tradeSourceCode);
 
         // Transfer Parameters to Javascript Source Code
-        string[] memory args = new string[](1);
+        string[] memory args = new string[](4);
         args[0] = _tradeId;
+        args[1] = _buyId;
+        args[2] = _sellId;
+        args[3] = Strings.toString(_tradeAmount);
         req.setArgs(args);
 
         // 외부 요청 API KEY
