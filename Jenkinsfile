@@ -56,7 +56,7 @@ pipeline {
                 script {
                     echo "Building and pushing image..."
 
-                    sh "podman build -t ${DOCKER_IMAGE}:${APP_VERSION} -t ${DOCKER_IMAGE}:latest ."
+                    sh "podman build --tag ${DOCKER_IMAGE}:${APP_VERSION} --tag ${DOCKER_IMAGE}:latest ."
                     
                     sh "podman push ${DOCKER_IMAGE}:${APP_VERSION}"
                     sh "podman push ${DOCKER_IMAGE}:latest"
