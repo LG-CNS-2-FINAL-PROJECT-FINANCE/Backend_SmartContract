@@ -12,10 +12,10 @@ const apiResponse = await Functions.makeHttpRequest({
         'Content-Type': 'application/json'
     },
     data: {
-        tradeId : BigInt(tradeId) || 0,
-        buyId : BigInt(buyId) || 0,
-        sellId : BigInt(sellId) || 0,
-        tradeAmount : BigInt(tradeAmount) || 0
+        tradeId : Number(tradeId) || 0,
+        buyId : Number(buyId) || 0,
+        sellId : Number(sellId) || 0,
+        tradeAmount : Number(tradeAmount) || 0
     }
 });
 
