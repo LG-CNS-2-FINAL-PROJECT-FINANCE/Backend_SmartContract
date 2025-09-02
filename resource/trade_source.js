@@ -21,7 +21,7 @@ const apiResponse = await Functions.makeHttpRequest({
 
 if (apiResponse.error) {
     console.error(apiResponse.error);
-    throw Error("Request failed");
+    throw Error(`Request failed : ${apiResponse.error}`);
 }
 
 const { data } = apiResponse;
