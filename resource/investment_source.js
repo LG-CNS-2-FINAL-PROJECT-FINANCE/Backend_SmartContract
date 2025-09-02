@@ -4,9 +4,9 @@ const investmentsList = investmentsData.map(dataString => {
     const parts = dataString.split(',');
     
     return {
-        investmentId: BigInt(parts[0]) || 0,
+        investmentId: Number(parts[0]) || 0,
         investorAddress: parts[1],
-        tokenAmount: BigInt(parts[2]) || 0
+        tokenAmount: Number(parts[2]) || 0
     };
 });
 
