@@ -75,7 +75,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
 
     event InvestmentRequested(bytes32 indexed projectIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string[] investmentIdList);
     event InvestmentSuccessful(bytes32 indexed projectIndex, string indexed investmentIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string investmentId, address buyer, uint256 tokenAmount, string chainlinkResult);
-    event InvestmentFailed(bytes32 indexed projectIndex, string indexed investmentIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string investmentId, uint256 status, string reason);
+    event InvestmentFailed(bytes32 indexed projectIndex, string indexed investmentIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string investmentId, address buyer, uint256 tokenAmount, uint256 status, string reason);
 
     event TradeRequested(bytes32 indexed projectIndex, string indexed tradeIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string tradeId, address seller, address buyer, uint256 tokenAmount);
     event TradeSuccessful(bytes32 indexed projectIndex, string indexed tradeIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string tradeId, address seller, address buyer, uint256 tokenAmount, string chainlinkResult);
@@ -234,19 +234,19 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         uint256 _result,
         bytes memory _err
     ) private {
+        address buyer = investmentRecord[_investmentId].investmentor;
+        uint256 amount = investmentRecord[_investmentId].tokenAmount;
+
         if (investmentRecord[_investmentId].processState != Status.Pending) {
-            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, REPEAT_FAILED, "Request Status is not Pending.");
+            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, buyer, amount, REPEAT_FAILED, "Request Status is not Pending.");
             return;
         }
 
         if (_err.length > 0) {
             investmentRecord[_investmentId].processState = Status.None;
-            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, CHAINLINK_FAILED, "Chainlink Functions request failed.");
+            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, buyer, amount, CHAINLINK_FAILED, "Chainlink Functions request failed.");
             return;
         }
-
-        address buyer = investmentRecord[_investmentId].investmentor;
-        uint256 amount = investmentRecord[_investmentId].tokenAmount;
 
         if (_result == 1) {
             if (balanceOf(address(this)) >= amount * (10 ** decimals())) {         
@@ -258,12 +258,12 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
             } else {
                 // 심각한 에러 발생 : 내부 로직 오류
                 investmentRecord[_investmentId].processState = Status.None;
-                emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, SMART_CONTRACT_FAILED, "Insufficient contract token supply for initial transfer.");
+                emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, buyer, amount, SMART_CONTRACT_FAILED, "Insufficient contract token supply for initial transfer.");
                 pause();
             }
         } else {
             investmentRecord[_investmentId].processState = Status.None;
-            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, EXTERNAL_API_FAILED, "Initial payment verification failed.");
+            emit InvestmentFailed(projectId, _investmentId, _chainlinkRequestId, projectId, _investmentId, buyer, amount, EXTERNAL_API_FAILED, "Initial payment verification failed.");
         }
     }
 
