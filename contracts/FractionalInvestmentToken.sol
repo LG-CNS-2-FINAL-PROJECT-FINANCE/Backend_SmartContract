@@ -79,7 +79,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
 
     event TradeRequested(bytes32 indexed projectIndex, string indexed tradeIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string tradeId, address seller, address buyer, uint256 tokenAmount);
     event TradeSuccessful(bytes32 indexed projectIndex, string indexed tradeIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string tradeId, address seller, address buyer, uint256 tokenAmount, string chainlinkResult);
-    event TradeFailed(bytes32 indexed projectIndex, string indexed tradeIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string tradeId, uint256 status, string reason);
+    event TradeFailed(bytes32 indexed projectIndex, string indexed tradeIndex, bytes32 indexed chainlinkRequestId, bytes32 projectId, string tradeId, address seller, address buyer, uint256 tokenAmount, uint256 status, string reason);
 
     constructor(
         bytes32 _projectId,
@@ -390,33 +390,33 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
         uint256 _result,
         bytes memory _err
     ) private {
-        if (tradeRecord[_tradeId].processState != Status.Pending) {
-            emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, REPEAT_FAILED, "Request already processed.");
-            return;
-        }
-
-        if (_err.length > 0) {
-            tradeRecord[_tradeId].processState = Status.None;
-            emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, CHAINLINK_FAILED, "Chainlink Functions request failed.");
-            return;
-        }
-
         sell storage tradeSell = sellRecord[tradeRecord[_tradeId].sellId];
         buy memory tradeBuy = buyRecord[tradeRecord[_tradeId].buyId];
         uint256 tradeAmount = tradeBuy.buyAmount;
         uint256 tradeAmountWei = tradeAmount * (10 ** decimals());
 
+        if (tradeRecord[_tradeId].processState != Status.Pending) {
+            emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, tradeSell.seller, tradeBuy.buyer, tradeAmount, REPEAT_FAILED, "Request already processed.");
+            return;
+        }
+
+        if (_err.length > 0) {
+            tradeRecord[_tradeId].processState = Status.None;
+            emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, tradeSell.seller, tradeBuy.buyer, tradeAmount, CHAINLINK_FAILED, "Chainlink Functions request failed.");
+            return;
+        }
+
         if (_result == 1) {
             if (balanceOf(address(this)) < tradeAmountWei) {
                 tradeRecord[_tradeId].processState = Status.None;
-                emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, SMART_CONTRACT_FAILED, "Insufficient contract token supply for transfer.");
+                emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, tradeSell.seller, tradeBuy.buyer, tradeAmount, SMART_CONTRACT_FAILED, "Insufficient contract token supply for transfer.");
                 pause();
                 return;
             }
 
             if (tradeSell.depositAmount < tradeAmount) {
                 tradeRecord[_tradeId].processState = Status.None;
-                emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, SMART_CONTRACT_FAILED, "Insufficient deposit token supply for transfer.");
+                emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, tradeSell.seller, tradeBuy.buyer, tradeAmount, SMART_CONTRACT_FAILED, "Insufficient deposit token supply for transfer.");
                 pause();
                 return;
             }
@@ -430,7 +430,7 @@ contract FractionalInvestmentToken is ERC20Permit, Ownable, FunctionsClient, Pau
             emit TradeSuccessful(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, tradeSell.seller, tradeBuy.buyer, tradeAmount, "Off-chain purchase verified");
         } else {
             tradeRecord[_tradeId].processState = Status.None;
-            emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, EXTERNAL_API_FAILED, "Off-chain purchase verification failed. Tokens returned to seller.");
+            emit TradeFailed(projectId, _tradeId, _chainlinkRequestId, projectId, _tradeId, tradeSell.seller, tradeBuy.buyer, tradeAmount, EXTERNAL_API_FAILED, "Off-chain purchase verification failed. Tokens returned to seller.");
         }
     }
 
