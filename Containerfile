@@ -9,7 +9,7 @@ COPY package.json ./
 COPY package-lock.json ./
 
 # 종속성 설치
-RUN npm ci
+RUN npm install
 
 # 전체 프로젝트 복사
 COPY . .
