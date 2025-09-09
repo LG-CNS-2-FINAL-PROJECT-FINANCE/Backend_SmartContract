@@ -1,56 +1,80 @@
 #!/usr/bin/env groovy
 def APP_NAME
 def APP_VERSION
-def DOCKER_IMAGE
+def DOCKER_IMAGE_NAME
+def PROD_IMAGE_NAME
 
 pipeline {
     agent any
 
     environment {
-        REGISTRY_HOST = "192.168.56.200:5000"
         USER_EMAIL = 'ssassaium@gmail.com'
         USER_ID = 'kaebalsaebal'
+        DEV_REGISTRY = "192.168.56.200:5000" // 개발용 로컬 레지스트리
+        PROD_REGISTRY = credentials('PROD_REGISTRY') // 프로덕션용 AWS ECR 레지스트리
         SERVICE_NAME = 'backend-smart-contract'
     }
 
     tools {
         nodejs 'NodeJS 20.19.2'
     }
-    
-    stages {
 
-        stage('Checkout Dev Branch') {
+    stages {
+        // master/main 브랜치일 때 AWS ECR에 로그인
+        stage('Login into AWS ECR') {
+            when {
+                anyOf {
+                    expression { env.BRANCH_NAME == 'master' }
+                    expression { env.BRANCH_NAME == 'main' }
+                }
+            }
             steps {
-                // Git에서 dev 브랜치의 코드를 가져옵니다.
-                checkout scm
+                script {
+                    withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: 'aws-credential',
+                        accessKeyVariable: 'AWS_ACCESS_KEY_ID',
+                        secretKeyVariable: 'AWS_SECRET_ACCESS_KEY'
+                    ]]) {
+                        sh """
+                        aws ecr get-login-password --region ap-northeast-2 \
+                        | podman login --username AWS --password-stdin ${PROD_REGISTRY}
+                        """
+                    }
+                }
             }
         }
 
         stage('Set Version') {
-            agent any
             steps {
                 script {
                     echo '도커 이미지 이름과 태그를 동적으로 설정합니다...'
-        
                     APP_NAME = sh(
                         script: "node -p \"require('./package.json').name\"",
                         returnStdout: true
                     ).trim()
-
                     APP_VERSION = sh(
                         script: "node -p \"require('./package.json').version\"",
                         returnStdout: true
                     ).trim()
-        
-                    DOCKER_IMAGE = "${REGISTRY_HOST}/${APP_NAME}"
-        
-                    sh "echo IMAGE_NAME is ${APP_NAME}"
-                    sh "echo IMAGE_VERSION is ${APP_VERSION}"
-                    sh "echo DOCKER_IMAGE is ${DOCKER_IMAGE}"
+
+                    if (env.BRANCH_NAME == 'dev') {
+                        DOCKER_IMAGE_NAME = "${DEV_REGISTRY}/${APP_NAME}:${APP_VERSION}"
+                    } else if (env.BRANCH_NAME == 'master' || env.BRANCH_NAME == 'main') {
+                        DOCKER_IMAGE_NAME = "${PROD_REGISTRY}/${APP_NAME}:${APP_VERSION}"
+                    }
+                
+                    sh "echo DOCKER_IMAGE_NAME is ${DOCKER_IMAGE_NAME}"
                 }
             }
         }
         
+        stage('Checkout Branch') {
+            steps {
+                checkout scm
+            }
+        }
+
         stage('Image Build and Push') {
             steps {
                 script {
