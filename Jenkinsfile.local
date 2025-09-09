@@ -1,0 +1,107 @@
+// 파이프라인 정의
+pipeline {
+    // Jenkins 에이전트를 모든 환경에서 실행하도록 설정
+    agent any
+
+    // Jenkins에 저장된 Docker 레지스트리 인증 정보와 이미지 이름을 환경 변수로 설정합니다.
+    environment {
+        // 도커 이미지 레지스트리 주소를 설정합니다.
+        DOCKER_REGISTRY = 'namsangwon'
+        // Jenkins Credentials Manager에 등록된 ID입니다.
+        DOCKERHUB_CREDENTIAL = "dockerhub-token"
+    }
+
+    // 파이프라인의 전역 옵션 설정
+    options {
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: "10", artifactNumToKeepStr: "10"))
+        timeout(time:120, unit: 'MINUTES')
+    }
+
+    // Jenkins에서 사용할 도구 설정
+    tools {
+        dockerTool 'Docker'
+    }
+
+    // 파이프라인의 스테이지(단계) 정의
+    stages {
+        stage('Checkout Source Code') {
+            steps {
+                echo 'Checking out source code...'
+                checkout scm
+            }
+        }
+        
+        // 'Set Docker Image Name' 스테이지: 동적으로 이미지 이름과 태그를 구성
+        stage('Set Docker Image Name') {
+            agent {
+                docker {
+                    image 'node:18-alpine'
+                    args '-v $PWD:/app' // 현재 프로젝트 디렉터리를 컨테이너의 /app으로 마운트합니다.
+                }
+            }
+            steps {
+                script {
+                    echo '도커 이미지 이름과 태그를 동적으로 설정합니다...'
+
+                    // Hardhat 프로젝트의 package.json에서 이름과 버전을 가져옵니다.
+                    def APP_NAME = sh (
+                        script: 'node -p "require(\'./package.json\').name"',
+                        returnStdout: true
+                    ).trim()
+                    
+                    def APP_VERSION = sh (
+                        script: 'node -p "require(\'./package.json\').version"',
+                        returnStdout: true
+                    ).trim()
+                    
+                    env.APP_NAME = APP_NAME
+                    env.APP_VERSION = APP_VERSION
+
+                    env.DOCKER_VER_IMAGE = "${DOCKER_REGISTRY}/${APP_NAME}:${env.APP_VERSION}"
+                    env.DOCKER_LATEST_IMAGE = "${DOCKER_REGISTRY}/${APP_NAME}:latest"
+                    
+                    echo "구성된 기본 이미지 이름: ${env.DOCKER_VER_IMAGE}"
+                }
+            }
+        }
+        
+        // 'Build Docker Image' 스테이지: 멀티-아키텍처 이미지 빌드
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    echo '도커 이미지를 빌드합니다...'
+                    
+                    docker.build("${env.DOCKER_VER_IMAGE}", "--platform linux/amd64,linux/arm64 -t ${env.DOCKER_VER_IMAGE} -t ${env.DOCKER_LATEST_IMAGE} --file ./Containerfile .")
+                }
+            }
+        }
+
+        // 'Push Docker Image' 스테이지: 빌드된 이미지를 Docker 레지스트리로 푸시
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    echo '도커 레지스트리로 이미지를 푸시합니다...'
+                    
+                    docker.withRegistry("", env.DOCKERHUB_CREDENTIAL) {
+                        docker.image("${env.DOCKER_VER_IMAGE}").push()
+                        docker.image("${env.DOCKER_LATEST_IMAGE}").push()
+                    }
+
+                    sh "docker rmi ${env.DOCKER_VER_IMAGE}"
+                    sh "docker rmi ${env.DOCKER_LATEST_IMAGE}"
+                }
+            }
+        }
+    }
+
+    // 파이프라인 빌드 완료 후 실행될 작업
+    post {
+        success {
+            echo '도커 이미지 빌드 및 푸시 파이프라인이 성공했습니다!'
+        }
+        failure {
+            echo '도커 이미지 빌드 및 푸시 파이프라인이 실패했습니다!'
+        }
+    }
+}
