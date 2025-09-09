@@ -1,8 +1,8 @@
 #!/usr/bin/env groovy
 def APP_NAME
 def APP_VERSION
-def DOCKER_IMAGE_NAME
-def PROD_IMAGE_NAME
+def DOCKER_IMAGE
+def PROD_IMAGE
 
 pipeline {
     agent any
@@ -59,12 +59,12 @@ pipeline {
                     ).trim()
 
                     if (env.BRANCH_NAME == 'dev') {
-                        DOCKER_IMAGE_NAME = "${DEV_REGISTRY}/${APP_NAME}:${APP_VERSION}"
+                        DOCKER_IMAGE = "${DEV_REGISTRY}/${APP_NAME}:${APP_VERSION}"
                     } else if (env.BRANCH_NAME == 'master' || env.BRANCH_NAME == 'main') {
-                        DOCKER_IMAGE_NAME = "${PROD_REGISTRY}/${APP_NAME}:${APP_VERSION}"
+                        DOCKER_IMAGE = "${PROD_REGISTRY}/${APP_NAME}:${APP_VERSION}"
                     }
                 
-                    sh "echo DOCKER_IMAGE_NAME is ${DOCKER_IMAGE_NAME}"
+                    sh "echo DOCKER_IMAGE is ${DOCKER_IMAGE}"
                 }
             }
         }
