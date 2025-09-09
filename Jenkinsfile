@@ -59,9 +59,9 @@ pipeline {
                     ).trim()
 
                     if (env.BRANCH_NAME == 'dev') {
-                        DOCKER_IMAGE = "${DEV_REGISTRY}/${APP_NAME}:${APP_VERSION}"
+                        DOCKER_IMAGE = "${DEV_REGISTRY}/${APP_NAME}"
                     } else if (env.BRANCH_NAME == 'master' || env.BRANCH_NAME == 'main') {
-                        DOCKER_IMAGE = "${PROD_REGISTRY}/${APP_NAME}:${APP_VERSION}"
+                        DOCKER_IMAGE = "${PROD_REGISTRY}/${APP_NAME}"
                     }
                 
                     sh "echo DOCKER_IMAGE is ${DOCKER_IMAGE}"
