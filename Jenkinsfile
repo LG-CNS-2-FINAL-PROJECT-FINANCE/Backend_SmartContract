@@ -80,6 +80,7 @@ pipeline {
         always {
             echo "Cleaning up workspace..."
             deleteDir() // workspace 전체 정리
+
         }
     }
 }
