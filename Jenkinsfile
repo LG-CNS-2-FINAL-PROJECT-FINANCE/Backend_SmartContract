@@ -12,7 +12,7 @@ pipeline {
         USER_ID = 'kaebalsaebal'
         DEV_REGISTRY = "192.168.56.200:5000" // 개발용 로컬 레지스트리
         PROD_REGISTRY = credentials('PROD_REGISTRY') // 프로덕션용 AWS ECR 레지스트리
-        SERVICE_NAME = 'backend-smart-contract'
+        SERVICE_NAME = 'backend_smart_contract'
     }
 
     tools {
@@ -104,7 +104,10 @@ pipeline {
         always {
             echo "Cleaning up workspace..."
             deleteDir() // workspace 전체 정리
-
+            
+            echo "Cleaning up podman..."
+            sh "podman image prune -af || true" // podman 찌꺼기가 쌓여, 정리
+            sh "podman container prune -f || true" // podman 찌꺼기가 쌓여, 정리
         }
     }
 }
