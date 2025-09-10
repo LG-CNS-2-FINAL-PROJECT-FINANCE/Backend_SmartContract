@@ -8,7 +8,7 @@ pipeline {
         REGISTRY_HOST = "192.168.56.200:5000"
         USER_EMAIL = 'ssassaium@gmail.com'
         USER_ID = 'kaebalsaebal'
-        SERVICE_NAME = 'backend-smart-contract'
+        SERVICE_NAME = 'backend_smart_contract'
     }
 
     parameters {
