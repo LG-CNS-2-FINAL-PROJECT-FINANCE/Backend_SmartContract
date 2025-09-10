@@ -104,7 +104,10 @@ pipeline {
         always {
             echo "Cleaning up workspace..."
             deleteDir() // workspace 전체 정리
-
+            
+            echo "Cleaning up podman..."
+            sh "podman image prune -af || true" // podman 찌꺼기가 쌓여, 정리
+            sh "podman container prune -f || true" // podman 찌꺼기가 쌓여, 정리
         }
     }
 }
