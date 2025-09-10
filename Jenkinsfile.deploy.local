@@ -4,7 +4,7 @@ def TRANSACTION_HASH
 pipeline {
     agent {
         docker {
-            image 'namsangwon/backend-smart-contract:latest'
+            image 'namsangwon/backend_smart_contract:latest'
 
             args '-v $HOME/.npm:/root/.npm'
         }
